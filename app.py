@@ -82,10 +82,74 @@ st.subheader("Reports")
 tab1, tab2, tab3, tab4 = st.tabs(["Trades", "By Symbol", "By Side", "By Hour"])
 
 with tab1:
+    st.subheader("Trade Blotter")
+
+    symbols = sorted(trades["symbol"].dropna().unique().tolist())
+    sides = sorted(trades["side"].dropna().unique().tolist())
+
+    c1, c2, c3 = st.columns(3)
+
+    selected_symbols = c1.multiselect(
+        "Filter by symbol",
+        options=symbols,
+        default=symbols,
+    )
+
+    selected_sides = c2.multiselect(
+        "Filter by side",
+        options=sides,
+        default=sides,
+    )
+
+    pnl_filter = c3.selectbox(
+        "P&L filter",
+        ["All trades", "Winners only", "Losers only", "Breakeven only"],
+    )
+
+    filtered = trades.copy()
+
+    if selected_symbols:
+        filtered = filtered[filtered["symbol"].isin(selected_symbols)]
+
+    if selected_sides:
+        filtered = filtered[filtered["side"].isin(selected_sides)]
+
+    if pnl_filter == "Winners only":
+        filtered = filtered[filtered["net_pnl"] > 0]
+    elif pnl_filter == "Losers only":
+        filtered = filtered[filtered["net_pnl"] < 0]
+    elif pnl_filter == "Breakeven only":
+        filtered = filtered[filtered["net_pnl"] == 0]
+
+    st.caption(f"Showing {len(filtered):,} of {len(trades):,} trades")
+
+    display_cols = [
+        "date",
+        "symbol",
+        "side",
+        "shares",
+        "entry_time",
+        "exit_time",
+        "avg_entry",
+        "avg_exit",
+        "gross_pnl",
+        "net_pnl",
+        "hold_minutes",
+    ]
+
+    display_cols = [c for c in display_cols if c in filtered.columns]
+
     st.dataframe(
-        trades.sort_values("exit_time", ascending=False),
+        filtered.sort_values("exit_time", ascending=False)[display_cols],
         use_container_width=True,
         hide_index=True,
+    )
+
+    st.download_button(
+        "Download filtered trades CSV",
+        filtered.to_csv(index=False).encode("utf-8"),
+        file_name="filtered_trades.csv",
+        mime="text/csv",
     )
     st.download_button(
         "Download reconstructed trades CSV",
