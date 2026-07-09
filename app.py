@@ -159,10 +159,52 @@ with tab1:
     )
 
 with tab2:
-    report = group_report(trades, "symbol")
-    st.dataframe(report, use_container_width=True, hide_index=True)
-    if not report.empty:
-        st.plotly_chart(px.bar(report.head(20), x="symbol", y="net_pnl"), use_container_width=True)
+    st.subheader("Symbol Analysis")
+
+    symbol_stats = (
+        trades.groupby("symbol")
+        .agg(
+            trades=("symbol", "count"),
+            net_pnl=("net_pnl", "sum"),
+            gross_pnl=("gross_pnl", "sum"),
+            avg_pnl=("net_pnl", "mean"),
+            largest_win=("net_pnl", "max"),
+            largest_loss=("net_pnl", "min"),
+        )
+        .reset_index()
+    )
+
+    wins = trades[trades["net_pnl"] > 0].groupby("symbol").size()
+    losses = trades[trades["net_pnl"] < 0].groupby("symbol").size()
+
+    symbol_stats["wins"] = symbol_stats["symbol"].map(wins).fillna(0).astype(int)
+    symbol_stats["losses"] = symbol_stats["symbol"].map(losses).fillna(0).astype(int)
+    symbol_stats["win_rate"] = symbol_stats["wins"] / symbol_stats["trades"]
+
+    symbol_stats = symbol_stats.sort_values("net_pnl", ascending=False)
+
+    st.dataframe(
+        symbol_stats,
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    st.subheader("Top Winning Symbols")
+    st.bar_chart(
+        symbol_stats.head(10).set_index("symbol")["net_pnl"]
+    )
+
+    st.subheader("Top Losing Symbols")
+    st.bar_chart(
+        symbol_stats.tail(10).sort_values("net_pnl").set_index("symbol")["net_pnl"]
+    )
+
+    st.download_button(
+        "Download symbol analysis CSV",
+        symbol_stats.to_csv(index=False).encode("utf-8"),
+        file_name="symbol_analysis.csv",
+        mime="text/csv",
+    )
 
 with tab3:
     st.dataframe(group_report(trades, "side"), use_container_width=True, hide_index=True)
