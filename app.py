@@ -207,7 +207,45 @@ with tab2:
     )
 
 with tab3:
-    st.dataframe(group_report(trades, "side"), use_container_width=True, hide_index=True)
+    st.subheader("Performance by Side")
+
+    side_stats = (
+        trades.groupby("side")
+        .agg(
+            trades=("symbol", "count"),
+            net_pnl=("net_pnl", "sum"),
+            gross_pnl=("gross_pnl", "sum"),
+            avg_pnl=("net_pnl", "mean"),
+            largest_win=("net_pnl", "max"),
+            largest_loss=("net_pnl", "min"),
+        )
+        .reset_index()
+    )
+
+    wins = trades[trades["net_pnl"] > 0].groupby("side").size()
+    losses = trades[trades["net_pnl"] < 0].groupby("side").size()
+
+    side_stats["wins"] = side_stats["side"].map(wins).fillna(0).astype(int)
+    side_stats["losses"] = side_stats["side"].map(losses).fillna(0).astype(int)
+    side_stats["win_rate"] = side_stats["wins"] / side_stats["trades"]
+
+    side_stats = side_stats.sort_values("net_pnl", ascending=False)
+
+    st.dataframe(
+        side_stats,
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    st.subheader("Net P&L by Side")
+    st.bar_chart(side_stats.set_index("side")["net_pnl"])
+
+    st.download_button(
+        "Download side analysis CSV",
+        side_stats.to_csv(index=False).encode("utf-8"),
+        file_name="side_analysis.csv",
+        mime="text/csv",
+    )
 
 with tab4:
     st.subheader("Time of Day Analysis")
