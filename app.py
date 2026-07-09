@@ -210,10 +210,41 @@ with tab3:
     st.dataframe(group_report(trades, "side"), use_container_width=True, hide_index=True)
 
 with tab4:
-    hourly = group_report(trades, "entry_hour")
+    st.subheader("Time of Day Analysis")
+
+    hourly = (
+        trades.groupby("entry_hour")
+        .agg(
+            trades=("symbol", "count"),
+            net_pnl=("net_pnl", "sum"),
+            avg_pnl=("net_pnl", "mean"),
+        )
+        .reset_index()
+    )
+
+    wins = trades[trades["net_pnl"] > 0].groupby("entry_hour").size()
+    losses = trades[trades["net_pnl"] < 0].groupby("entry_hour").size()
+
+    hourly["wins"] = hourly["entry_hour"].map(wins).fillna(0).astype(int)
+    hourly["losses"] = hourly["entry_hour"].map(losses).fillna(0).astype(int)
+    hourly["win_rate"] = hourly["wins"] / hourly["trades"]
+
+    hourly = hourly.sort_values("entry_hour")
+
     st.dataframe(hourly, use_container_width=True, hide_index=True)
-    if not hourly.empty:
-        st.plotly_chart(px.bar(hourly, x="entry_hour", y="net_pnl"), use_container_width=True)
+
+    st.subheader("Net P&L by Hour")
+    st.bar_chart(hourly.set_index("entry_hour")["net_pnl"])
+
+    st.subheader("Win Rate by Hour")
+    st.bar_chart(hourly.set_index("entry_hour")["win_rate"])
+
+    st.download_button(
+        "Download hourly analysis CSV",
+        hourly.to_csv(index=False).encode("utf-8"),
+        file_name="hourly_analysis.csv",
+        mime="text/csv",
+    )
 
 with st.expander("Raw cleaned executions"):
     st.dataframe(executions, use_container_width=True, hide_index=True)
