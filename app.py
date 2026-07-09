@@ -5,6 +5,10 @@ import pandas as pd
 import streamlit as st
 import plotly.express as px
 
+from pathlib import Path
+from datetime import datetime
+import pandas as pd
+
 from engine.reconstruction import clean_executions, reconstruct_trades
 from engine.metrics import summary_metrics, equity_curve, group_report
 
@@ -79,7 +83,45 @@ with right:
         st.plotly_chart(px.bar(daily, x="date", y="net_pnl"), use_container_width=True)
 
 st.subheader("Reports")
-tab1, tab2, tab3, tab4 = st.tabs(["Trades", "By Symbol", "By Side", "By Hour"])
+
+ANNOTATIONS_PATH = Path("data/trade_annotations.csv")
+
+def load_annotations():
+    if ANNOTATIONS_PATH.exists():
+        return pd.read_csv(ANNOTATIONS_PATH)
+
+    return pd.DataFrame(
+        columns=[
+            "trade_index",
+            "symbol",
+            "tag",
+            "grade",
+            "emotion",
+            "mistake",
+            "notes",
+            "updated_at",
+        ]
+    )
+
+annotations = load_annotations()
+
+journal_trades = trades.merge(
+    annotations,
+    left_index=True,
+    right_on="trade_index",
+    how="left",
+)
+
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
+    [
+        "Trades",
+        "By Symbol",
+        "By Side",
+        "By Hour",
+        "Journal",
+        "Setups",
+    ]
+)
 
 with tab1:
     st.subheader("Trade Blotter")
@@ -87,32 +129,38 @@ with tab1:
     symbols = sorted(trades["symbol"].dropna().unique().tolist())
     sides = sorted(trades["side"].dropna().unique().tolist())
 
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4 = st.columns(4)
 
-    selected_symbols = c1.multiselect(
-        "Filter by symbol",
-        options=symbols,
-        default=symbols,
+    selected_symbol = c1.selectbox(
+        "Symbol",
+        ["All Symbols"] + symbols,
+        key="tab1_symbol_filter",
     )
 
-    selected_sides = c2.multiselect(
-        "Filter by side",
-        options=sides,
-        default=sides,
+    selected_side = c2.selectbox(
+        "Side",
+        ["All Sides"] + sides,
+        key="tab1_side_filter",
     )
 
     pnl_filter = c3.selectbox(
-        "P&L filter",
+        "P&L",
         ["All trades", "Winners only", "Losers only", "Breakeven only"],
+        key="tab1_pnl_filter",
+    )
+
+    only_unjournaled = c4.checkbox(
+        "Only unjournaled",
+        key="tab1_only_unjournaled",
     )
 
     filtered = trades.copy()
 
-    if selected_symbols:
-        filtered = filtered[filtered["symbol"].isin(selected_symbols)]
+    if selected_symbol != "All Symbols":
+        filtered = filtered[filtered["symbol"] == selected_symbol]
 
-    if selected_sides:
-        filtered = filtered[filtered["side"].isin(selected_sides)]
+    if selected_side != "All Sides":
+        filtered = filtered[filtered["side"] == selected_side]
 
     if pnl_filter == "Winners only":
         filtered = filtered[filtered["net_pnl"] > 0]
@@ -121,91 +169,81 @@ with tab1:
     elif pnl_filter == "Breakeven only":
         filtered = filtered[filtered["net_pnl"] == 0]
 
+    journaled_trade_ids = annotations["trade_index"].dropna().astype(int).tolist()
+
+    if only_unjournaled:
+        filtered = filtered[~filtered.index.isin(journaled_trade_ids)]
+
+    total_trades = len(trades)
+    journaled_count = len(set(journaled_trade_ids))
+    progress = journaled_count / total_trades if total_trades > 0 else 0
+
+    st.progress(progress)
+    st.caption(
+        f"Journal progress: {journaled_count:,} / {total_trades:,} trades completed "
+        f"({progress:.0%})"
+    )
+
     st.caption(f"Showing {len(filtered):,} of {len(trades):,} trades")
 
-    display_cols = [
-        "date",
-        "symbol",
-        "side",
-        "shares",
-        "entry_time",
-        "exit_time",
-        "avg_entry",
-        "avg_exit",
-        "gross_pnl",
-        "net_pnl",
-        "hold_minutes",
-    ]
+    if filtered.empty:
+        st.warning("No trades match the selected filters.")
+    else:
+        trade_options = filtered.sort_values("exit_time", ascending=False).copy()
 
-    display_cols = [c for c in display_cols if c in filtered.columns]
+        trade_options["trade_label"] = (
+            trade_options.index.astype(str)
+            + " | "
+            + trade_options["date"].astype(str)
+            + " | "
+            + trade_options["symbol"].astype(str)
+            + " | "
+            + trade_options["side"].astype(str)
+            + " | P&L: "
+            + trade_options["net_pnl"].round(2).astype(str)
+        )
 
-    st.dataframe(
-        filtered.sort_values("exit_time", ascending=False)[display_cols],
-        use_container_width=True,
-        hide_index=True,
-    )
+        selected_label = st.selectbox(
+            "Select trade",
+            trade_options["trade_label"].tolist(),
+            key="tab1_trade_selector",
+        )
 
-    st.download_button(
-        "Download filtered trades CSV",
-        filtered.to_csv(index=False).encode("utf-8"),
-        file_name="filtered_trades.csv",
-        mime="text/csv",
-    )
-    st.download_button(
-        "Download reconstructed trades CSV",
-        trades.to_csv(index=False).encode("utf-8"),
-        file_name="reconstructed_trades.csv",
-        mime="text/csv",
-    )
-    
-    st.divider()
-    st.subheader("Trade Details")
+        selected_index = int(selected_label.split(" | ")[0])
+        trade = trades.loc[selected_index]
 
-    trade_options = filtered.sort_values("exit_time", ascending=False).copy()
-    trade_options["trade_label"] = (
-        trade_options.index.astype(str)
-        + " | "
-        + trade_options["date"].astype(str)
-        + " | "
-        + trade_options["symbol"].astype(str)
-        + " | "
-        + trade_options["side"].astype(str)
-        + " | P&L: "
-        + trade_options["net_pnl"].round(2).astype(str)
-    )
+        st.divider()
+        st.subheader("Trade Details")
 
-    selected_label = st.selectbox(
-        "Select a trade",
-        trade_options["trade_label"].tolist(),
-    )
+        d1, d2, d3, d4 = st.columns(4)
 
-    selected_index = int(selected_label.split(" | ")[0])
-    trade = trades.loc[selected_index]
+        d1.metric("Symbol", trade["symbol"])
+        d2.metric("Side", trade["side"])
+        d3.metric("Shares", int(trade["shares"]))
+        d4.metric("Net P&L", f"${trade['net_pnl']:,.2f}")
 
-    c1, c2, c3, c4 = st.columns(4)
+        d5, d6, d7, d8 = st.columns(4)
 
-    c1.metric("Symbol", trade["symbol"])
-    c2.metric("Side", trade["side"])
-    c3.metric("Shares", int(trade["shares"]))
-    c4.metric("Net P&L", f"${trade['net_pnl']:,.2f}")
+        d5.metric("Avg Entry", f"${trade['avg_entry']:,.4f}")
+        d6.metric("Avg Exit", f"${trade['avg_exit']:,.4f}")
+        d7.metric("Hold Minutes", f"{trade['hold_minutes']:,.1f}")
+        d8.metric("R Multiple", f"{trade['r_multiple']:,.2f}")
 
-    c5, c6, c7, c8 = st.columns(4)
+        st.write("Entry Time:", trade["entry_time"])
+        st.write("Exit Time:", trade["exit_time"])
+        st.write("Executions:", trade["executions"])
 
-    c5.metric("Avg Entry", f"${trade['avg_entry']:,.4f}")
-    c6.metric("Avg Exit", f"${trade['avg_exit']:,.4f}")
-    c7.metric("Hold Minutes", f"{trade['hold_minutes']:,.1f}")
-    c8.metric("R Multiple", f"{trade['r_multiple']:,.2f}")
+        st.divider()
+        st.subheader("Journal Entry")
 
-    st.write("Entry Time:", trade["entry_time"])
-    st.write("Exit Time:", trade["exit_time"])
-    st.write("Executions:", trade["executions"])
-    
-    st.divider()
-    st.subheader("Journal Entry")
+        existing = annotations[annotations["trade_index"] == selected_index]
 
-    tag = st.selectbox(
-        "Setup / Tag",
-        [
+        if not existing.empty:
+            existing = existing.iloc[-1]
+        else:
+            existing = None
+
+        tag_options = [
             "",
             "Gap & Go",
             "ORB",
@@ -217,17 +255,11 @@ with tab1:
             "A+ Setup",
             "Bad Entry",
             "Bad Exit",
-        ],
-    )
+        ]
 
-    grade = st.selectbox(
-        "Trade Grade",
-        ["", "A+", "A", "B", "C", "D", "F"],
-    )
+        grade_options = ["", "A+", "A", "B", "C", "D", "F"]
 
-    emotion = st.selectbox(
-        "Emotion",
-        [
+        emotion_options = [
             "",
             "Calm",
             "Confident",
@@ -237,12 +269,9 @@ with tab1:
             "Greedy",
             "Revenge",
             "Frustrated",
-        ],
-    )
+        ]
 
-    mistake = st.selectbox(
-        "Mistake",
-        [
+        mistake_options = [
             "",
             "None",
             "Chased",
@@ -252,17 +281,50 @@ with tab1:
             "Ignored stop",
             "Oversized",
             "Overtraded",
-        ],
-    )
+        ]
 
-    notes = st.text_area(
-        "Trade Notes",
-        placeholder="What happened? What did you do well? What should you improve?"
-    )
+        def option_index(options, value):
+            if pd.isna(value):
+                return 0
+            return options.index(value) if value in options else 0
 
-    if st.button("Preview Journal Entry"):
-        st.write(
-            {
+        tag = st.selectbox(
+            "Setup / Tag",
+            tag_options,
+            index=option_index(tag_options, existing["tag"] if existing is not None else ""),
+            key=f"tab1_tag_{selected_index}",
+        )
+
+        grade = st.selectbox(
+            "Trade Grade",
+            grade_options,
+            index=option_index(grade_options, existing["grade"] if existing is not None else ""),
+            key=f"tab1_grade_{selected_index}",
+        )
+
+        emotion = st.selectbox(
+            "Emotion",
+            emotion_options,
+            index=option_index(emotion_options, existing["emotion"] if existing is not None else ""),
+            key=f"tab1_emotion_{selected_index}",
+        )
+
+        mistake = st.selectbox(
+            "Mistake",
+            mistake_options,
+            index=option_index(mistake_options, existing["mistake"] if existing is not None else ""),
+            key=f"tab1_mistake_{selected_index}",
+        )
+
+        notes = st.text_area(
+            "Trade Notes",
+            value=existing["notes"] if existing is not None and not pd.isna(existing["notes"]) else "",
+            placeholder="What happened? What did you do well? What should you improve?",
+            key=f"tab1_notes_{selected_index}",
+        )
+
+        if st.button("Save Journal Entry", key=f"save_journal_{selected_index}"):
+            new_entry = {
                 "trade_index": selected_index,
                 "symbol": trade["symbol"],
                 "tag": tag,
@@ -270,9 +332,58 @@ with tab1:
                 "emotion": emotion,
                 "mistake": mistake,
                 "notes": notes,
+                "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             }
+
+            annotations = annotations[annotations["trade_index"] != selected_index]
+            annotations = pd.concat(
+                [annotations, pd.DataFrame([new_entry])],
+                ignore_index=True,
+            )
+
+            ANNOTATIONS_PATH.parent.mkdir(exist_ok=True)
+            annotations.to_csv(ANNOTATIONS_PATH, index=False)
+
+            st.success("Journal entry saved.")
+
+        st.divider()
+        st.subheader("Filtered Trades")
+
+        display_cols = [
+            "date",
+            "symbol",
+            "side",
+            "shares",
+            "entry_time",
+            "exit_time",
+            "avg_entry",
+            "avg_exit",
+            "gross_pnl",
+            "net_pnl",
+            "hold_minutes",
+        ]
+
+        display_cols = [c for c in display_cols if c in filtered.columns]
+
+        st.dataframe(
+            filtered.sort_values("exit_time", ascending=False)[display_cols],
+            use_container_width=True,
+            hide_index=True,
         )
 
+        st.download_button(
+            "Download filtered trades CSV",
+            filtered.to_csv(index=False).encode("utf-8"),
+            file_name="filtered_trades.csv",
+            mime="text/csv",
+        )
+
+        st.download_button(
+            "Download reconstructed trades CSV",
+            trades.to_csv(index=False).encode("utf-8"),
+            file_name="reconstructed_trades.csv",
+            mime="text/csv",
+        )
 
 with tab2:
     st.subheader("Symbol Analysis")
@@ -399,6 +510,284 @@ with tab4:
         file_name="hourly_analysis.csv",
         mime="text/csv",
     )
+    
+with tab5:
+    st.write("Coming soon...")
+    #st.subheader("Journal Entry")
 
+    # j1, j2, j3 = st.columns(3)
+
+    # journal_symbols = sorted(trades["symbol"].dropna().unique().tolist())
+    # journal_sides = sorted(trades["side"].dropna().unique().tolist())
+
+    # selected_journal_symbols = j1.multiselect(
+        # "Symbol",
+        # options=journal_symbols,
+        # default=[],
+        # key="journal_symbol_filter",
+    # )
+
+    # selected_journal_sides = j2.multiselect(
+        # "Side",
+        # options=journal_sides,
+        # default=[],
+        # key="journal_side_filter",
+    # )
+
+    # journal_pnl_filter = j3.selectbox(
+        # "P&L",
+        # ["All trades", "Winners only", "Losers only", "Breakeven only"],
+        # key="journal_pnl_filter",
+    # )
+
+    # journal_filtered = trades.copy()
+
+    # if selected_journal_symbols:
+        # journal_filtered = journal_filtered[
+            # journal_filtered["symbol"].isin(selected_journal_symbols)
+        # ]
+
+    # if selected_journal_sides:
+        # journal_filtered = journal_filtered[
+            # journal_filtered["side"].isin(selected_journal_sides)
+        # ]
+
+    # if journal_pnl_filter == "Winners only":
+        # journal_filtered = journal_filtered[journal_filtered["net_pnl"] > 0]
+    # elif journal_pnl_filter == "Losers only":
+        # journal_filtered = journal_filtered[journal_filtered["net_pnl"] < 0]
+    # elif journal_pnl_filter == "Breakeven only":
+        # journal_filtered = journal_filtered[journal_filtered["net_pnl"] == 0]
+
+    # st.caption(
+        # f"Showing {len(journal_filtered):,} of {len(trades):,} trades"
+    # )
+
+    # if journal_filtered.empty:
+        # st.warning("No trades match the selected journal filters.")
+        # st.stop()
+        # trade_options = journal_filtered.sort_values(
+        # "exit_time",
+        # ascending=False,
+    # ).copy()
+
+    # trade_options["trade_label"] = (
+        # trade_options.index.astype(str)
+        # + " | "
+        # + trade_options["date"].astype(str)
+        # + " | "
+        # + trade_options["symbol"].astype(str)
+        # + " | "
+        # + trade_options["side"].astype(str)
+        # + " | P&L: "
+        # + trade_options["net_pnl"].round(2).astype(str)
+    # )
+
+    # selected_label = st.selectbox(
+        # "Select trade to journal",
+        # trade_options["trade_label"].tolist(),
+        # key="journal_trade_selector",
+    # )
+
+    # selected_index = int(selected_label.split(" | ")[0])
+    # trade = trades.loc[selected_index]    
+
+    # existing = annotations[annotations["trade_index"] == selected_index]
+
+    # if not existing.empty:
+        # existing = existing.iloc[-1]
+    # else:
+        # existing = None
+
+    # tag_options = [
+        # "",
+        # "Gap & Go",
+        # "ORB",
+        # "VWAP Reclaim",
+        # "Pullback",
+        # "Reversal",
+        # "News",
+        # "FOMO",
+        # "A+ Setup",
+        # "Bad Entry",
+        # "Bad Exit",
+    # ]
+
+    # grade_options = ["", "A+", "A", "B", "C", "D", "F"]
+
+    # emotion_options = [
+        # "",
+        # "Calm",
+        # "Confident",
+        # "Patient",
+        # "FOMO",
+        # "Fearful",
+        # "Greedy",
+        # "Revenge",
+        # "Frustrated",
+    # ]
+
+    # mistake_options = [
+        # "",
+        # "None",
+        # "Chased",
+        # "Held too long",
+        # "Exited too early",
+        # "Averaged down",
+        # "Ignored stop",
+        # "Oversized",
+        # "Overtraded",
+    # ]
+
+    # def option_index(options, value):
+        # if pd.isna(value):
+            # return 0
+        # return options.index(value) if value in options else 0
+
+    # tag = st.selectbox(
+        # "Setup / Tag",
+        # tag_options,
+        # index=option_index(tag_options, existing["tag"] if existing is not None else ""),
+        # key=f"tag_{selected_index}",
+    # )
+
+    # grade = st.selectbox(
+        # "Trade Grade",
+        # grade_options,
+        # index=option_index(grade_options, existing["grade"] if existing is not None else ""),
+        # key=f"grade_{selected_index}",
+    # )
+
+    # emotion = st.selectbox(
+        # "Emotion",
+        # emotion_options,
+        # index=option_index(emotion_options, existing["emotion"] if existing is not None else ""),
+        # key=f"emotion_{selected_index}",
+    # )
+
+    # mistake = st.selectbox(
+        # "Mistake",
+        # mistake_options,
+        # index=option_index(mistake_options, existing["mistake"] if existing is not None else ""),
+        # key=f"mistake_{selected_index}",
+    # )
+
+    # notes = st.text_area(
+        # "Trade Notes",
+        # value=existing["notes"] if existing is not None and not pd.isna(existing["notes"]) else "",
+        # placeholder="What happened? What did you do well? What should you improve?",
+        # key=f"notes_{selected_index}",
+    # )
+
+    # if st.button("Save Journal Entry"):
+        # new_entry = {
+            # "trade_index": selected_index,
+            # "symbol": trade["symbol"],
+            # "tag": tag,
+            # "grade": grade,
+            # "emotion": emotion,
+            # "mistake": mistake,
+            # "notes": notes,
+            # "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        # }
+
+        # annotations = annotations[annotations["trade_index"] != selected_index]
+        # annotations = pd.concat(
+            # [annotations, pd.DataFrame([new_entry])],
+            # ignore_index=True,
+        # )
+
+        # ANNOTATIONS_PATH.parent.mkdir(exist_ok=True)
+        # annotations.to_csv(ANNOTATIONS_PATH, index=False)
+
+        # st.success("Journal entry saved.")
+
+with tab6:
+
+    st.subheader("Setup Performance")
+    setup_trades = journal_trades[
+    journal_trades["tag"].notna()
+    ]
+
+    setup_trades = setup_trades[
+        setup_trades["tag"] != ""
+    ]
+    
+    if setup_trades.empty:
+        st.info("No tagged trades yet.")
+    else:
+        setup_stats = (
+            setup_trades.groupby("tag")
+            .agg(
+                trades=("tag", "count"),
+                net_pnl=("net_pnl", "sum"),
+                avg_pnl=("net_pnl", "mean"),
+                largest_win=("net_pnl", "max"),
+                largest_loss=("net_pnl", "min"),
+            )
+        .reset_index()
+        )
+    wins = (
+        setup_trades[setup_trades["net_pnl"] > 0]
+        .groupby("tag")
+        .size()
+    )
+
+    losses = (
+        setup_trades[setup_trades["net_pnl"] < 0]
+        .groupby("tag")
+        .size()
+    )
+
+    setup_stats["wins"] = (
+        setup_stats["tag"]
+        .map(wins)
+        .fillna(0)
+        .astype(int)
+    )
+
+    setup_stats["losses"] = (
+        setup_stats["tag"]
+        .map(losses)
+        .fillna(0)
+        .astype(int)
+    )
+
+    setup_stats["win_rate"] = (
+        100
+        * setup_stats["wins"]
+        / setup_stats["trades"]
+    )
+
+    setup_stats = setup_stats.sort_values(
+        "net_pnl",
+        ascending=False
+    )
+
+    st.dataframe(
+        setup_stats,
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    st.subheader("Net P&L by Setup")
+
+    st.bar_chart(
+        setup_stats.set_index("tag")["net_pnl"]
+    )
+
+    st.subheader("Win Rate by Setup")
+
+    st.bar_chart(
+        setup_stats.set_index("tag")["win_rate"]
+    )
+
+    st.download_button(
+        "Download Setup Report",
+        setup_stats.to_csv(index=False).encode("utf-8"),
+        file_name="setup_report.csv",
+        mime="text/csv",
+    )
+        
 with st.expander("Raw cleaned executions"):
     st.dataframe(executions, use_container_width=True, hide_index=True)
