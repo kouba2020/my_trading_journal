@@ -157,6 +157,49 @@ with tab1:
         file_name="reconstructed_trades.csv",
         mime="text/csv",
     )
+    
+    st.divider()
+    st.subheader("Trade Details")
+
+    trade_options = filtered.sort_values("exit_time", ascending=False).copy()
+    trade_options["trade_label"] = (
+        trade_options.index.astype(str)
+        + " | "
+        + trade_options["date"].astype(str)
+        + " | "
+        + trade_options["symbol"].astype(str)
+        + " | "
+        + trade_options["side"].astype(str)
+        + " | P&L: "
+        + trade_options["net_pnl"].round(2).astype(str)
+    )
+
+    selected_label = st.selectbox(
+        "Select a trade",
+        trade_options["trade_label"].tolist(),
+    )
+
+    selected_index = int(selected_label.split(" | ")[0])
+    trade = trades.loc[selected_index]
+
+    c1, c2, c3, c4 = st.columns(4)
+
+    c1.metric("Symbol", trade["symbol"])
+    c2.metric("Side", trade["side"])
+    c3.metric("Shares", int(trade["shares"]))
+    c4.metric("Net P&L", f"${trade['net_pnl']:,.2f}")
+
+    c5, c6, c7, c8 = st.columns(4)
+
+    c5.metric("Avg Entry", f"${trade['avg_entry']:,.4f}")
+    c6.metric("Avg Exit", f"${trade['avg_exit']:,.4f}")
+    c7.metric("Hold Minutes", f"{trade['hold_minutes']:,.1f}")
+    c8.metric("R Multiple", f"{trade['r_multiple']:,.2f}")
+
+    st.write("Entry Time:", trade["entry_time"])
+    st.write("Exit Time:", trade["exit_time"])
+    st.write("Executions:", trade["executions"])
+
 
 with tab2:
     st.subheader("Symbol Analysis")
