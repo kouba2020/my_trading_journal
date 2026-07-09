@@ -199,6 +199,79 @@ with tab1:
     st.write("Entry Time:", trade["entry_time"])
     st.write("Exit Time:", trade["exit_time"])
     st.write("Executions:", trade["executions"])
+    
+    st.divider()
+    st.subheader("Journal Entry")
+
+    tag = st.selectbox(
+        "Setup / Tag",
+        [
+            "",
+            "Gap & Go",
+            "ORB",
+            "VWAP Reclaim",
+            "Pullback",
+            "Reversal",
+            "News",
+            "FOMO",
+            "A+ Setup",
+            "Bad Entry",
+            "Bad Exit",
+        ],
+    )
+
+    grade = st.selectbox(
+        "Trade Grade",
+        ["", "A+", "A", "B", "C", "D", "F"],
+    )
+
+    emotion = st.selectbox(
+        "Emotion",
+        [
+            "",
+            "Calm",
+            "Confident",
+            "Patient",
+            "FOMO",
+            "Fearful",
+            "Greedy",
+            "Revenge",
+            "Frustrated",
+        ],
+    )
+
+    mistake = st.selectbox(
+        "Mistake",
+        [
+            "",
+            "None",
+            "Chased",
+            "Held too long",
+            "Exited too early",
+            "Averaged down",
+            "Ignored stop",
+            "Oversized",
+            "Overtraded",
+        ],
+    )
+
+    notes = st.text_area(
+        "Trade Notes",
+        placeholder="What happened? What did you do well? What should you improve?"
+    )
+
+    if st.button("Preview Journal Entry"):
+        st.write(
+            {
+                "trade_index": selected_index,
+                "symbol": trade["symbol"],
+                "tag": tag,
+                "grade": grade,
+                "emotion": emotion,
+                "mistake": mistake,
+                "notes": notes,
+            }
+        )
 
 
 with tab2:
