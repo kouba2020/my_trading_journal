@@ -1,0 +1,25 @@
+trade_index,symbol,tag,grade,emotion,mistake,notes,updated_at
+122,BYAH,Pullback,B,Fearful,Ignored stop,my notes here. test,2026-07-09 13:29:28
+79,AZI,Gap & Go,A+,Calm,Exited too early,test notes,2026-07-09 13:45:20
+78,AZI,Pullback,B,Confident,Exited too early,,2026-07-09 14:07:16
+123,CAST,FOMO,A,Fearful,Chased,,2026-07-09 14:08:15
+120,CAST,Bad Entry,C,FOMO,Chased,,2026-07-09 14:08:56
+119,CAST,Pullback,D,FOMO,Averaged down,,2026-07-09 14:09:24
+115,CAST,Pullback,B,Confident,Exited too early,,2026-07-09 14:09:58
+178,WCT,Bad Exit,F,Fearful,Overtraded,test #222,2026-07-09 16:33:34
+468,CLRO,Gap & Go,B,Calm,,tesyyyy,2026-07-09 17:11:44
+471,CLRO,A+ Setup,A,FOMO,Exited too early,,2026-07-09 17:12:15
+2,VSME,A+ Setup,A+,Calm,,,2026-07-09 17:13:38
+21,CPOP,ORB,B,Confident,Averaged down,,2026-07-11 21:37:43
+112,BYAH,Gap & Go,A+,Calm,,,2026-07-11 22:14:09
+111,BYAH,Pullback,A+,Calm,,,2026-07-11 22:14:27
+110,BYAH,,,,,,2026-07-11 22:14:31
+109,BYAH,Pullback,A+,Calm,,,2026-07-11 22:14:58
+108,BYAH,Gap & Go,A+,Confident,Exited too early,,2026-07-11 22:15:21
+107,BYAH,Pullback,B,Confident,Exited too early,,2026-07-11 22:15:51
+106,BYAH,VWAP Reclaim,A,Confident,Exited too early,,2026-07-11 22:16:34
+98,BYAH,Gap & Go,B,Patient,,,2026-07-11 22:16:59
+92,BYAH,Pullback,D,FOMO,Chased,,2026-07-11 22:17:27
+89,BYAH,Gap & Go,C,FOMO,Chased,,2026-07-11 22:17:43
+77,BYAH,News,C,FOMO,Chased,,2026-07-11 22:18:04
+75,BYAH,Pullback,C,Fearful,Exited too early,,2026-07-11 22:18:31

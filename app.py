@@ -69,6 +69,7 @@ st.divider()
 left, right = st.columns([2, 1])
 
 with left:
+
     st.subheader("Equity Curve")
     eq = equity_curve(trades)
     if not eq.empty:
@@ -77,6 +78,7 @@ with left:
         st.warning("No closed trades found yet.")
 
 with right:
+
     st.subheader("Daily P&L")
     daily = trades.groupby("date", as_index=False)["net_pnl"].sum() if not trades.empty else pd.DataFrame()
     if not daily.empty:
@@ -105,14 +107,24 @@ def load_annotations():
 
 annotations = load_annotations()
 
+annotation_cols = [
+    "trade_index",
+    "tag",
+    "grade",
+    "emotion",
+    "mistake",
+    "notes",
+    "updated_at",
+]
+
 journal_trades = trades.merge(
-    annotations,
+    annotations[annotation_cols],
     left_index=True,
     right_on="trade_index",
     how="left",
 )
 
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12 = st.tabs(
     [
         "Trades",
         "By Symbol",
@@ -120,10 +132,17 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
         "By Hour",
         "Journal",
         "Setups",
+        "Emotions",
+        "Mistakes",
+        "Grades",
+        "Daily Review",
+        "Insights",
+        "Expectancy & Risk",
     ]
 )
 
 with tab1:
+
     st.subheader("Trade Blotter")
 
     symbols = sorted(trades["symbol"].dropna().unique().tolist())
@@ -349,7 +368,28 @@ with tab1:
         st.divider()
         st.subheader("Filtered Trades")
 
+
+        
+        table_data = filtered.copy()
+
+        journaled_ids = (
+            annotations["trade_index"]
+            .dropna()
+            .astype(int)
+            .tolist()
+        )
+
+        table_data["journaled"] = table_data.index.isin(journaled_ids)
+
+        table_data["journaled"] = table_data["journaled"].map(
+            {
+                True: "✅",
+                False: "❌",
+            }
+        )
+        
         display_cols = [
+            "journaled",
             "date",
             "symbol",
             "side",
@@ -363,10 +403,10 @@ with tab1:
             "hold_minutes",
         ]
 
-        display_cols = [c for c in display_cols if c in filtered.columns]
-
+        display_cols = [c for c in display_cols if c in table_data.columns]
+        
         st.dataframe(
-            filtered.sort_values("exit_time", ascending=False)[display_cols],
+            table_data.sort_values("exit_time", ascending=False)[display_cols],
             use_container_width=True,
             hide_index=True,
         )
@@ -386,6 +426,7 @@ with tab1:
         )
 
 with tab2:
+
     st.subheader("Symbol Analysis")
 
     symbol_stats = (
@@ -434,6 +475,7 @@ with tab2:
     )
 
 with tab3:
+
     st.subheader("Performance by Side")
 
     side_stats = (
@@ -475,6 +517,7 @@ with tab3:
     )
 
 with tab4:
+
     st.subheader("Time of Day Analysis")
 
     hourly = (
@@ -512,6 +555,7 @@ with tab4:
     )
     
 with tab5:
+
     st.write("Coming soon...")
     #st.subheader("Journal Entry")
 
@@ -788,6 +832,1026 @@ with tab6:
         file_name="setup_report.csv",
         mime="text/csv",
     )
+      
+with tab7:
+
+    st.subheader("Emotion Analysis")
+    emotion_trades = journal_trades[
+    journal_trades["emotion"].notna()
+    ]
+
+    emotion_trades = emotion_trades[
+        emotion_trades["emotion"] != ""
+    ]
+    if emotion_trades.empty:
+        st.info("No emotion data available yet.")
+    else:
+        emotion_stats = (
+            emotion_trades.groupby("emotion")
+            .agg(
+                trades=("emotion", "count"),
+                net_pnl=("net_pnl", "sum"),
+                avg_pnl=("net_pnl", "mean"),
+                largest_win=("net_pnl", "max"),
+                largest_loss=("net_pnl", "min"),
+            )
+            .reset_index()
+        )
+    wins = (
+        emotion_trades[emotion_trades["net_pnl"] > 0]
+        .groupby("emotion")
+        .size()
+    )
+
+    losses = (
+        emotion_trades[emotion_trades["net_pnl"] < 0]
+        .groupby("emotion")
+        .size()
+    )
+
+    emotion_stats["wins"] = (
+        emotion_stats["emotion"]
+        .map(wins)
+        .fillna(0)
+        .astype(int)
+    )
+
+    emotion_stats["losses"] = (
+        emotion_stats["emotion"]
+        .map(losses)
+        .fillna(0)
+        .astype(int)
+    )
+
+    emotion_stats["win_rate"] = (
+        100
+        * emotion_stats["wins"]
+        / emotion_stats["trades"]
+    )
+    
+    emotion_stats = emotion_stats.sort_values(
+        "net_pnl",
+        ascending=False
+    )
+    
+    st.dataframe(
+        emotion_stats,
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    st.subheader("Net P&L by Emotion")
+
+    st.bar_chart(
+        emotion_stats.set_index("emotion")["net_pnl"]
+    )
+    
+    st.subheader("Win Rate by Emotion")
+
+    st.bar_chart(
+        emotion_stats.set_index("emotion")["win_rate"]
+    )
+
+    st.download_button(
+        "Download Emotion Report",
+        emotion_stats.to_csv(index=False).encode("utf-8"),
+        file_name="emotion_report.csv",
+        mime="text/csv",
+    )
+
+with tab8:
+
+    st.subheader("Mistake Analysis")
+
+    mistake_trades = journal_trades[
+        journal_trades["mistake"].notna()
+    ]
+
+    mistake_trades = mistake_trades[
+        mistake_trades["mistake"] != ""
+    ]
+
+    if mistake_trades.empty:
+        st.info("No mistake data available yet.")
+
+    else:
+        mistake_stats = (
+            mistake_trades.groupby("mistake")
+            .agg(
+                trades=("mistake", "count"),
+                net_pnl=("net_pnl", "sum"),
+                avg_pnl=("net_pnl", "mean"),
+                largest_win=("net_pnl", "max"),
+                largest_loss=("net_pnl", "min"),
+            )
+            .reset_index()
+        )
+
+        wins = (
+            mistake_trades[mistake_trades["net_pnl"] > 0]
+            .groupby("mistake")
+            .size()
+        )
+
+        losses = (
+            mistake_trades[mistake_trades["net_pnl"] < 0]
+            .groupby("mistake")
+            .size()
+        )
+
+        mistake_stats["wins"] = (
+            mistake_stats["mistake"]
+            .map(wins)
+            .fillna(0)
+            .astype(int)
+        )
+
+        mistake_stats["losses"] = (
+            mistake_stats["mistake"]
+            .map(losses)
+            .fillna(0)
+            .astype(int)
+        )
+
+        mistake_stats["win_rate"] = (
+            100
+            * mistake_stats["wins"]
+            / mistake_stats["trades"]
+        )
+
+        mistake_stats = mistake_stats.sort_values(
+            "net_pnl",
+            ascending=False,
+        )
+
+        st.dataframe(
+            mistake_stats,
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        st.subheader("Net P&L by Mistake")
+
+        st.bar_chart(
+            mistake_stats.set_index("mistake")["net_pnl"]
+        )
+
+        st.subheader("Win Rate by Mistake")
+
+        st.bar_chart(
+            mistake_stats.set_index("mistake")["win_rate"]
+        )
+
+        st.download_button(
+            "Download Mistake Report",
+            mistake_stats.to_csv(index=False).encode("utf-8"),
+            file_name="mistake_report.csv",
+            mime="text/csv",
+        )
+
+with tab9:
+
+    st.subheader("Grade Analysis")
+
+    grade_trades = journal_trades[
+        journal_trades["grade"].notna()
+    ].copy()
+
+    grade_trades = grade_trades[
+        grade_trades["grade"].astype(str).str.strip() != ""
+    ]
+
+    if grade_trades.empty:
+        st.info("No grade data available yet.")
+
+    else:
+        grade_stats = (
+            grade_trades.groupby("grade")
+            .agg(
+                trades=("grade", "count"),
+                net_pnl=("net_pnl", "sum"),
+                avg_pnl=("net_pnl", "mean"),
+                largest_win=("net_pnl", "max"),
+                largest_loss=("net_pnl", "min"),
+                avg_r_multiple=("r_multiple", "mean"),
+            )
+            .reset_index()
+        )
+
+        wins = (
+            grade_trades[grade_trades["net_pnl"] > 0]
+            .groupby("grade")
+            .size()
+        )
+
+        losses = (
+            grade_trades[grade_trades["net_pnl"] < 0]
+            .groupby("grade")
+            .size()
+        )
+
+        breakeven = (
+            grade_trades[grade_trades["net_pnl"] == 0]
+            .groupby("grade")
+            .size()
+        )
+
+        grade_stats["wins"] = (
+            grade_stats["grade"]
+            .map(wins)
+            .fillna(0)
+            .astype(int)
+        )
+
+        grade_stats["losses"] = (
+            grade_stats["grade"]
+            .map(losses)
+            .fillna(0)
+            .astype(int)
+        )
+
+        grade_stats["breakeven"] = (
+            grade_stats["grade"]
+            .map(breakeven)
+            .fillna(0)
+            .astype(int)
+        )
+
+        grade_stats["win_rate"] = (
+            100
+            * grade_stats["wins"]
+            / grade_stats["trades"]
+        )
+
+        grade_order = ["A+", "A", "B", "C", "D", "F"]
+
+        grade_stats["grade"] = pd.Categorical(
+            grade_stats["grade"],
+            categories=grade_order,
+            ordered=True,
+        )
+
+        grade_stats = grade_stats.sort_values("grade")
+
+        st.dataframe(
+            grade_stats,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "net_pnl": st.column_config.NumberColumn(
+                    "Net P&L",
+                    format="$%.2f",
+                ),
+                "avg_pnl": st.column_config.NumberColumn(
+                    "Avg P&L",
+                    format="$%.2f",
+                ),
+                "largest_win": st.column_config.NumberColumn(
+                    "Largest Win",
+                    format="$%.2f",
+                ),
+                "largest_loss": st.column_config.NumberColumn(
+                    "Largest Loss",
+                    format="$%.2f",
+                ),
+                "avg_r_multiple": st.column_config.NumberColumn(
+                    "Avg R",
+                    format="%.2f",
+                ),
+                "win_rate": st.column_config.NumberColumn(
+                    "Win Rate",
+                    format="%.1f%%",
+                ),
+            },
+        )
+
+        st.subheader("Net P&L by Grade")
+
+        st.bar_chart(
+            grade_stats.set_index("grade")["net_pnl"]
+        )
+
+        st.subheader("Average P&L by Grade")
+
+        st.bar_chart(
+            grade_stats.set_index("grade")["avg_pnl"]
+        )
+
+        st.subheader("Win Rate by Grade")
+
+        st.bar_chart(
+            grade_stats.set_index("grade")["win_rate"]
+        )
+
+        st.download_button(
+            "Download Grade Report",
+            grade_stats.to_csv(index=False).encode("utf-8"),
+            file_name="grade_report.csv",
+            mime="text/csv",
+        )
+
+with tab10:
+
+    st.subheader("Daily Review")
+    available_dates = sorted(
+    trades["date"].dropna().unique(),
+    reverse=True
+    )
+
+    selected_day = st.selectbox(
+        "Select Trading Day",
+        available_dates
+    )
+
+    day_trades = journal_trades[
+    journal_trades["date"] == selected_day
+    ]
+    
+    col1, col2, col3, col4 = st.columns(4)
+
+    col1.metric(
+        "Trades",
+        len(day_trades)
+    )
+
+    col2.metric(
+        "Net P&L",
+        f"${day_trades['net_pnl'].sum():,.2f}"
+    )
+
+    col3.metric(
+        "Avg Trade",
+        f"${day_trades['net_pnl'].mean():,.2f}"
+    )
+
+    wins = (day_trades["net_pnl"] > 0).sum()
+
+    win_rate = (
+        100 * wins / len(day_trades)
+        if len(day_trades) > 0
+        else 0
+    )
+
+    col4.metric(
+        "Win Rate",
+        f"{win_rate:.1f}%"
+    )
+    
+    st.subheader("Best & Worst Trade")
+
+    valid_day_trades = day_trades.dropna(
+    subset=["net_pnl"]
+    ).copy()
+
+    valid_day_trades["net_pnl"] = pd.to_numeric(
+        valid_day_trades["net_pnl"],
+        errors="coerce",
+    )
+
+    valid_day_trades = valid_day_trades.dropna(
+        subset=["net_pnl"]
+    )
+
+    if valid_day_trades.empty:
+        st.info("No trades available for this day.")
         
+    else:
+        best_trade = valid_day_trades.iloc[
+        valid_day_trades["net_pnl"].argmax()
+        ]
+
+        worst_trade = valid_day_trades.iloc[
+            valid_day_trades["net_pnl"].argmin()
+        ]
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.success(
+                f"""
+        Best Trade
+
+        {best_trade['symbol']}
+
+        P&L: ${best_trade['net_pnl']:.2f}
+        """
+            )
+
+    with col2:
+        st.error(
+            f"""
+        Worst Trade
+
+        {worst_trade['symbol']}
+
+        P&L: ${worst_trade['net_pnl']:.2f}
+        """
+        )
+
+    st.subheader("Behavior Summary")
+    
+    if day_trades["tag"].notna().any():
+
+        top_setup = (
+            day_trades["tag"]
+            .value_counts()
+            .idxmax()
+        )
+
+        st.write(
+            f"**Most Traded Setup:** {top_setup}"
+        )
+    
+    if day_trades["emotion"].notna().any():
+
+        top_emotion = (
+            day_trades["emotion"]
+            .value_counts()
+            .idxmax()
+        )
+
+        st.write(
+            f"**Most Common Emotion:** {top_emotion}"
+        )
+    
+    if day_trades["mistake"].notna().any():
+
+        top_mistake = (
+            day_trades["mistake"]
+            .value_counts()
+            .idxmax()
+        )
+
+        st.write(
+            f"**Most Common Mistake:** {top_mistake}"
+        )
+    
+    st.subheader("Trades")
+
+    st.dataframe(
+        day_trades[
+            [
+                "symbol",
+                "side",
+                "shares",
+                "net_pnl",
+                "tag",
+                "emotion",
+                "mistake",
+                "grade",
+            ]
+        ],
+        use_container_width=True,
+    )
+
+with tab11:
+
+    st.subheader("Trading Insights")
+    
+    journaled_count = len(
+        annotations["trade_index"].dropna().unique()
+    )
+
+    coverage = (
+        100 * journaled_count / len(trades)
+    )
+
+    if coverage < 25:
+        st.warning(
+            f"""
+            Only {coverage:.1f}% of trades have been journaled.
+
+            Insights may not yet be statistically reliable.
+            Consider journaling at least 25-30% of trades.
+            """
+        )
+
+
+    insight_trades = journal_trades.copy()
+
+    insight_trades["net_pnl"] = pd.to_numeric(
+        insight_trades["net_pnl"],
+        errors="coerce",
+    )
+
+    insight_trades = insight_trades.dropna(
+        subset=["net_pnl"]
+    )
+
+    if insight_trades.empty:
+        st.info("No trading data available.")
+
+    else:
+        # ---------------------------------
+        # Best symbol
+        # ---------------------------------
+        symbol_results = (
+            insight_trades.groupby("symbol")["net_pnl"]
+            .agg(["sum", "count"])
+        )
+
+        best_symbol = symbol_results["sum"].idxmax()
+        best_symbol_pnl = symbol_results.loc[best_symbol, "sum"]
+
+        # ---------------------------------
+        # Best trading hour
+        # ---------------------------------
+        hour_results = (
+            insight_trades.groupby("entry_hour")["net_pnl"]
+            .agg(["sum", "count"])
+        )
+
+        best_hour = hour_results["sum"].idxmax()
+        best_hour_pnl = hour_results.loc[best_hour, "sum"]
+
+        # ---------------------------------
+        # Best setup
+        # ---------------------------------
+        setup_trades = insight_trades[
+            insight_trades["tag"].notna()
+            & (insight_trades["tag"].astype(str).str.strip() != "")
+        ]
+
+        if not setup_trades.empty:
+            setup_results = (
+                setup_trades.groupby("tag")["net_pnl"]
+                .agg(["sum", "count"])
+            )
+
+            best_setup = setup_results["sum"].idxmax()
+            best_setup_pnl = setup_results.loc[best_setup, "sum"]
+
+        else:
+            best_setup = "No data"
+            best_setup_pnl = 0
+
+        # ---------------------------------
+        # Best emotion
+        # ---------------------------------
+        emotion_trades = insight_trades[
+            insight_trades["emotion"].notna()
+            & (
+                insight_trades["emotion"]
+                .astype(str)
+                .str.strip()
+                != ""
+            )
+        ]
+
+        if not emotion_trades.empty:
+            emotion_results = (
+                emotion_trades.groupby("emotion")["net_pnl"]
+                .agg(["sum", "count"])
+            )
+
+            best_emotion = emotion_results["sum"].idxmax()
+            best_emotion_pnl = emotion_results.loc[
+                best_emotion,
+                "sum",
+            ]
+
+            worst_emotion = emotion_results["sum"].idxmin()
+            worst_emotion_pnl = emotion_results.loc[
+                worst_emotion,
+                "sum",
+            ]
+
+        else:
+            best_emotion = "No data"
+            best_emotion_pnl = 0
+            worst_emotion = "No data"
+            worst_emotion_pnl = 0
+
+        # ---------------------------------
+        # Most expensive mistake
+        # ---------------------------------
+        mistake_trades = insight_trades[
+            insight_trades["mistake"].notna()
+            & (
+                insight_trades["mistake"]
+                .astype(str)
+                .str.strip()
+                != ""
+            )
+            & (
+                insight_trades["mistake"]
+                .astype(str)
+                .str.lower()
+                != "none"
+            )
+        ]
+
+        if not mistake_trades.empty:
+            mistake_results = (
+                mistake_trades.groupby("mistake")["net_pnl"]
+                .agg(["sum", "count"])
+            )
+
+            worst_mistake = mistake_results["sum"].idxmin()
+            worst_mistake_pnl = mistake_results.loc[
+                worst_mistake,
+                "sum",
+            ]
+
+        else:
+            worst_mistake = "No data"
+            worst_mistake_pnl = 0
+    
+        row1_col1, row1_col2, row1_col3 = st.columns(3)
+
+        row1_col1.metric(
+            "Best Symbol",
+            str(best_symbol),
+            f"${best_symbol_pnl:,.2f}",
+        )
+
+        row1_col2.metric(
+            "Best Trading Hour",
+            f"{int(best_hour):02d}:00",
+            f"${best_hour_pnl:,.2f}",
+        )
+
+        row1_col3.metric(
+            "Best Setup",
+            str(best_setup),
+            f"${best_setup_pnl:,.2f}",
+        )
+
+        row2_col1, row2_col2, row2_col3 = st.columns(3)
+
+        row2_col1.metric(
+            "Best Emotion",
+            str(best_emotion),
+            f"${best_emotion_pnl:,.2f}",
+        )
+
+        row2_col2.metric(
+            "Worst Emotion",
+            str(worst_emotion),
+            f"${worst_emotion_pnl:,.2f}",
+        )
+
+        row2_col3.metric(
+            "Most Expensive Mistake",
+            str(worst_mistake),
+            f"${worst_mistake_pnl:,.2f}",
+        )
+        
+        st.subheader("Current Streak")
+
+        streak_trades = insight_trades.sort_values(
+            "exit_time"
+        ).copy()
+
+        streak_trades = streak_trades[
+            streak_trades["net_pnl"] != 0
+        ]
+
+        current_streak = 0
+        streak_type = "No streak"
+
+        if not streak_trades.empty:
+            last_result_is_win = (
+                streak_trades.iloc[-1]["net_pnl"] > 0
+            )
+
+            streak_type = (
+                "Winning streak"
+                if last_result_is_win
+                else "Losing streak"
+            )
+
+            for pnl in reversed(
+                streak_trades["net_pnl"].tolist()
+            ):
+                is_win = pnl > 0
+
+                if is_win == last_result_is_win:
+                    current_streak += 1
+                else:
+                    break
+
+        st.metric(
+            streak_type,
+            current_streak,
+        )
+        
+        st.subheader("Summary")
+
+        st.write(
+            f"""
+            Your most profitable symbol is **{best_symbol}**, generating
+            **${best_symbol_pnl:,.2f}**.
+
+            Your strongest trading hour is **{int(best_hour):02d}:00**, with
+            **${best_hour_pnl:,.2f}** in net P&L.
+
+            Your best-performing setup is **{best_setup}**, while your most
+            expensive mistake is **{worst_mistake}**.
+
+            Your best-performing emotional state is **{best_emotion}**.
+            """
+        )
+
+with tab12:
+
+    st.subheader("Expectancy & Risk Metrics")
+
+    risk_trades = trades.copy()
+
+    risk_trades["net_pnl"] = pd.to_numeric(
+        risk_trades["net_pnl"],
+        errors="coerce",
+    )
+
+    risk_trades = risk_trades.dropna(
+        subset=["net_pnl"]
+    )
+
+    if risk_trades.empty:
+        st.info("No valid trade data available.")
+
+    else:
+        total_trades = len(risk_trades)
+
+        winning_trades = risk_trades[
+            risk_trades["net_pnl"] > 0
+        ]
+
+        losing_trades = risk_trades[
+            risk_trades["net_pnl"] < 0
+        ]
+
+        breakeven_trades = risk_trades[
+            risk_trades["net_pnl"] == 0
+        ]
+
+        wins = len(winning_trades)
+        losses = len(losing_trades)
+        breakeven = len(breakeven_trades)
+
+        win_rate = (
+            100 * wins / total_trades
+            if total_trades > 0
+            else 0
+        )
+
+        loss_rate = (
+            100 * losses / total_trades
+            if total_trades > 0
+            else 0
+        )
+
+        avg_win = (
+            winning_trades["net_pnl"].mean()
+            if not winning_trades.empty
+            else 0
+        )
+
+        avg_loss = (
+            losing_trades["net_pnl"].mean()
+            if not losing_trades.empty
+            else 0
+        )
+
+        gross_profit = winning_trades["net_pnl"].sum()
+
+        gross_loss = abs(
+            losing_trades["net_pnl"].sum()
+        )
+
+        profit_factor = (
+            gross_profit / gross_loss
+            if gross_loss > 0
+            else float("inf")
+        )
+
+        payoff_ratio = (
+            avg_win / abs(avg_loss)
+            if avg_loss != 0
+            else float("inf")
+        )
+
+        expectancy = (
+            (win_rate / 100) * avg_win
+            + (loss_rate / 100) * avg_loss
+        )
+
+        total_net_pnl = risk_trades["net_pnl"].sum()
+
+        avg_trade = risk_trades["net_pnl"].mean()
+        
+        equity_trades = risk_trades.sort_values(
+            "exit_time"
+        ).copy()
+
+        equity_trades["cumulative_pnl"] = (
+            equity_trades["net_pnl"].cumsum()
+        )
+
+        equity_trades["running_peak"] = (
+            equity_trades["cumulative_pnl"].cummax()
+        )
+
+        equity_trades["drawdown"] = (
+            equity_trades["cumulative_pnl"]
+            - equity_trades["running_peak"]
+        )
+
+        max_drawdown = equity_trades["drawdown"].min()
+
+        max_drawdown = abs(max_drawdown)
+        
+    row1_col1, row1_col2, row1_col3, row1_col4 = st.columns(4)
+
+    row1_col1.metric(
+        "Total Trades",
+        total_trades,
+    )
+
+    row1_col2.metric(
+        "Net P&L",
+        f"${total_net_pnl:,.2f}",
+    )
+
+    row1_col3.metric(
+        "Win Rate",
+        f"{win_rate:.1f}%",
+    )
+
+    row1_col4.metric(
+        "Average Trade",
+        f"${avg_trade:,.2f}",
+    )
+
+    row2_col1, row2_col2, row2_col3, row2_col4 = st.columns(4)
+
+    row2_col1.metric(
+        "Average Win",
+        f"${avg_win:,.2f}",
+    )
+
+    row2_col2.metric(
+        "Average Loss",
+        f"${avg_loss:,.2f}",
+    )
+
+    row2_col3.metric(
+        "Payoff Ratio",
+        (
+            f"{payoff_ratio:.2f}"
+            if payoff_ratio != float("inf")
+            else "∞"
+        ),
+    )
+
+    row2_col4.metric(
+        "Profit Factor",
+        (
+            f"{profit_factor:.2f}"
+            if profit_factor != float("inf")
+            else "∞"
+        ),
+    )
+
+    row3_col1, row3_col2, row3_col3, row3_col4 = st.columns(4)
+
+    row3_col1.metric(
+        "Expectancy / Trade",
+        f"${expectancy:,.2f}",
+    )
+
+    row3_col2.metric(
+        "Max Drawdown",
+        f"${max_drawdown:,.2f}",
+    )
+
+    row3_col3.metric(
+        "Winning Trades",
+        wins,
+    )
+
+    row3_col4.metric(
+        "Losing Trades",
+        losses,
+    )
+    
+    st.subheader("Interpretation")
+
+    if expectancy > 0:
+        st.success(
+            f"Positive expectancy: on average, each trade earns "
+            f"${expectancy:,.2f}."
+        )
+    elif expectancy < 0:
+        st.error(
+            f"Negative expectancy: on average, each trade loses "
+            f"${abs(expectancy):,.2f}."
+        )
+    else:
+        st.info("Expectancy is currently at breakeven.")
+
+    if profit_factor > 1.5:
+        st.success(
+            "Profit factor is strong. Gross profits meaningfully "
+            "exceed gross losses."
+        )
+    elif profit_factor >= 1:
+        st.warning(
+            "Profit factor is positive but still modest."
+        )
+    else:
+        st.error(
+            "Profit factor is below 1. Gross losses exceed gross profits."
+        )
+
+    if payoff_ratio >= 1:
+        st.write(
+            "Your average winner is at least as large as your average loser."
+        )
+    else:
+        st.write(
+            "Your average winner is smaller than your average loser, "
+            "so a higher win rate may be required."
+        )
+   
+    st.subheader("Cumulative Net P&L")
+
+    st.line_chart(
+        equity_trades.set_index("exit_time")[
+            "cumulative_pnl"
+        ]
+    )
+
+    st.subheader("Drawdown")
+
+    st.line_chart(
+        equity_trades.set_index("exit_time")[
+            "drawdown"
+        ]
+    )
+    
+    metric_summary = pd.DataFrame(
+        {
+            "Metric": [
+                "Total Trades",
+                "Winning Trades",
+                "Losing Trades",
+                "Breakeven Trades",
+                "Win Rate",
+                "Loss Rate",
+                "Average Win",
+                "Average Loss",
+                "Payoff Ratio",
+                "Gross Profit",
+                "Gross Loss",
+                "Profit Factor",
+                "Expectancy per Trade",
+                "Net P&L",
+                "Maximum Drawdown",
+            ],
+            "Value": [
+                total_trades,
+                wins,
+                losses,
+                breakeven,
+                f"{win_rate:.1f}%",
+                f"{loss_rate:.1f}%",
+                f"${avg_win:,.2f}",
+                f"${avg_loss:,.2f}",
+                (
+                    f"{payoff_ratio:.2f}"
+                    if payoff_ratio != float("inf")
+                    else "∞"
+                ),
+                f"${gross_profit:,.2f}",
+                f"${gross_loss:,.2f}",
+                (
+                    f"{profit_factor:.2f}"
+                    if profit_factor != float("inf")
+                    else "∞"
+                ),
+                f"${expectancy:,.2f}",
+                f"${total_net_pnl:,.2f}",
+                f"${max_drawdown:,.2f}",
+            ],
+        }
+    )
+
+    st.dataframe(
+        metric_summary,
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    st.download_button(
+        "Download Risk Metrics",
+        metric_summary.to_csv(index=False).encode("utf-8"),
+        file_name="expectancy_risk_metrics.csv",
+        mime="text/csv",
+    )
+  
 with st.expander("Raw cleaned executions"):
     st.dataframe(executions, use_container_width=True, hide_index=True)
+    
+#st.write(day_trades.columns.tolist())
