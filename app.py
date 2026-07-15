@@ -124,6 +124,199 @@ journal_trades = trades.merge(
     how="left",
 )
 
+journal_trades["trade_index"] = pd.to_numeric(
+    journal_trades["trade_index"],
+    errors="coerce",
+).astype("Int64")
+# ====================================
+# GLOBAL FILTERS GO HERE
+# ====================================
+
+st.sidebar.header("Filters")
+
+#Date Range
+trades["date"] = pd.to_datetime(
+    trades["date"],
+    errors="coerce",
+)
+
+min_date = trades["date"].min().date()
+max_date = trades["date"].max().date()
+
+date_range = st.sidebar.date_input(
+    "Date Range",
+    value=(min_date, max_date),
+)
+
+#Symbol Filter
+symbol_options = sorted(
+    trades["symbol"].dropna().unique()
+)
+
+selected_symbols = st.sidebar.multiselect(
+    "Symbols",
+    symbol_options,
+)
+
+#Side Filter
+side_options = sorted(
+    trades["side"].dropna().unique()
+)
+
+selected_sides = st.sidebar.multiselect(
+    "Side",
+    side_options,
+)
+
+#Setup Filter
+setup_options = sorted(
+    journal_trades["tag"]
+    .dropna()
+    .astype(str)
+    .unique()
+)
+
+selected_setups = st.sidebar.multiselect(
+    "Setup",
+    setup_options,
+)
+
+#Emotion filter
+emotion_options = sorted(
+    journal_trades["emotion"]
+    .dropna()
+    .astype(str)
+    .unique()
+)
+
+selected_emotions = st.sidebar.multiselect(
+    "Emotion",
+    emotion_options,
+)
+   
+#Mistake filter
+mistake_options = sorted(
+    journal_trades["mistake"]
+    .dropna()
+    .astype(str)
+    .unique()
+)
+
+selected_mistakes = st.sidebar.multiselect(
+    "Mistake",
+    mistake_options,
+)
+
+#Grade filter
+grade_options = sorted(
+    journal_trades["grade"]
+    .dropna()
+    .astype(str)
+    .unique()
+)
+
+selected_grades = st.sidebar.multiselect(
+    "Grade",
+    grade_options,
+)
+
+#Journaled Only
+journaled_only = st.sidebar.checkbox(
+    "Journaled Only"
+) 
+
+#Build analysis_trades
+analysis_trades = journal_trades.copy()
+
+#Date filter
+if len(date_range) == 2:
+    start_date = pd.Timestamp(date_range[0])
+    end_date = pd.Timestamp(date_range[1])
+
+    analysis_trades["date"] = pd.to_datetime(
+        analysis_trades["date"],
+        errors="coerce",
+    )
+
+    analysis_trades = analysis_trades[
+        analysis_trades["date"].between(
+            start_date,
+            end_date,
+            inclusive="both",
+        )
+    ]
+
+#Symbol filter
+if selected_symbols:
+
+    analysis_trades = analysis_trades[
+        analysis_trades["symbol"]
+        .isin(selected_symbols)
+    ]
+
+#Side filter
+if selected_sides:
+
+    analysis_trades = analysis_trades[
+        analysis_trades["side"]
+        .isin(selected_sides)
+    ]
+    
+#Setup filter
+if selected_setups:
+
+    analysis_trades = analysis_trades[
+        analysis_trades["tag"]
+        .isin(selected_setups)
+    ]    
+    
+#Emotion filter    
+if selected_emotions:
+
+    analysis_trades = analysis_trades[
+        analysis_trades["emotion"]
+        .isin(selected_emotions)
+    ]    
+
+#Mistake filter
+if selected_mistakes:
+
+    analysis_trades = analysis_trades[
+        analysis_trades["mistake"]
+        .isin(selected_mistakes)
+    ]
+
+#Grade filter
+if selected_grades:
+
+    analysis_trades = analysis_trades[
+        analysis_trades["grade"]
+        .isin(selected_grades)
+    ]
+
+#Journaled Only
+if journaled_only:
+    analysis_trades = analysis_trades[
+        analysis_trades["tag"].notna()
+        & (
+            analysis_trades["tag"]
+            .astype(str)
+            .str.strip()
+            != ""
+        )
+    ]
+
+
+    
+#Display filter summary   
+
+st.info(
+    f"""
+Showing {len(analysis_trades):,} trades
+out of {len(trades):,}
+"""
+)    
+
 tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12 = st.tabs(
     [
         "Trades",
@@ -141,12 +334,34 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12 = st.t
     ]
 )
 
-with tab1:
+annotations["trade_index"] = pd.to_numeric(
+    annotations["trade_index"],
+    errors="coerce",
+).astype("Int64")
 
+with tab1:
     st.subheader("Trade Blotter")
 
-    symbols = sorted(trades["symbol"].dropna().unique().tolist())
-    sides = sorted(trades["side"].dropna().unique().tolist())
+    # if st.session_state.pop("journal_saved", False):
+        # st.success("Journal entry saved successfully.")
+    # ---------------------------------
+    # Tab-specific filters
+    # ---------------------------------
+    symbols = sorted(
+        analysis_trades["symbol"]
+        .dropna()
+        .astype(str)
+        .unique()
+        .tolist()
+    )
+
+    sides = sorted(
+        analysis_trades["side"]
+        .dropna()
+        .astype(str)
+        .unique()
+        .tolist()
+    )
 
     c1, c2, c3, c4 = st.columns(4)
 
@@ -164,7 +379,12 @@ with tab1:
 
     pnl_filter = c3.selectbox(
         "P&L",
-        ["All trades", "Winners only", "Losers only", "Breakeven only"],
+        [
+            "All trades",
+            "Winners only",
+            "Losers only",
+            "Breakeven only",
+        ],
         key="tab1_pnl_filter",
     )
 
@@ -173,221 +393,582 @@ with tab1:
         key="tab1_only_unjournaled",
     )
 
-    filtered = trades.copy()
+    # Start from globally filtered trades
+    filtered = analysis_trades.copy()
 
+    # ---------------------------------
+    # Apply Tab 1 filters
+    # ---------------------------------
     if selected_symbol != "All Symbols":
-        filtered = filtered[filtered["symbol"] == selected_symbol]
+        filtered = filtered[
+            filtered["symbol"].astype(str) == selected_symbol
+        ]
 
     if selected_side != "All Sides":
-        filtered = filtered[filtered["side"] == selected_side]
+        filtered = filtered[
+            filtered["side"].astype(str) == selected_side
+        ]
 
     if pnl_filter == "Winners only":
-        filtered = filtered[filtered["net_pnl"] > 0]
+        filtered = filtered[
+            filtered["net_pnl"] > 0
+        ]
+
     elif pnl_filter == "Losers only":
-        filtered = filtered[filtered["net_pnl"] < 0]
+        filtered = filtered[
+            filtered["net_pnl"] < 0
+        ]
+
     elif pnl_filter == "Breakeven only":
-        filtered = filtered[filtered["net_pnl"] == 0]
+        filtered = filtered[
+            filtered["net_pnl"] == 0
+        ]
 
-    journaled_trade_ids = annotations["trade_index"].dropna().astype(int).tolist()
-
-    if only_unjournaled:
-        filtered = filtered[~filtered.index.isin(journaled_trade_ids)]
-
-    total_trades = len(trades)
-    journaled_count = len(set(journaled_trade_ids))
-    progress = journaled_count / total_trades if total_trades > 0 else 0
-
-    st.progress(progress)
-    st.caption(
-        f"Journal progress: {journaled_count:,} / {total_trades:,} trades completed "
-        f"({progress:.0%})"
+    # ---------------------------------
+    # Journal IDs
+    # ---------------------------------
+    journaled_trade_ids = (
+        annotations["trade_index"]
+        .dropna()
+        .astype(int)
+        .unique()
+        .tolist()
     )
 
-    st.caption(f"Showing {len(filtered):,} of {len(trades):,} trades")
+    if only_unjournaled:
+        filtered = filtered[
+            ~filtered["trade_index"].isin(
+                journaled_trade_ids
+            )
+        ]
 
+    # ---------------------------------
+    # Journal progress
+    # ---------------------------------
+    total_trades = len(trades)
+
+    valid_trade_ids = set(
+        journal_trades["trade_index"]
+        .dropna()
+        .astype(int)
+        .tolist()
+    )
+
+    journaled_count = len(
+        valid_trade_ids.intersection(
+            set(journaled_trade_ids)
+        )
+    )
+
+    progress = (
+        journaled_count / total_trades
+        if total_trades > 0
+        else 0
+    )
+
+    st.progress(progress)
+
+    st.caption(
+        f"Journal progress: "
+        f"{journaled_count:,} / {total_trades:,} "
+        f"trades completed ({progress:.0%})"
+    )
+
+    st.caption(
+        f"Showing {len(filtered):,} "
+        f"of {len(analysis_trades):,} filtered trades"
+    )
+
+    # ---------------------------------
+    # No matching trades
+    # ---------------------------------
     if filtered.empty:
-        st.warning("No trades match the selected filters.")
+        st.warning(
+            "No trades match the selected filters."
+        )
+
     else:
-        trade_options = filtered.sort_values("exit_time", ascending=False).copy()
+        # ---------------------------------
+        # Trade selector
+        # ---------------------------------
+        filtered = filtered.sort_values(
+            "exit_time",
+            ascending=False,
+        ).copy()
 
-        trade_options["trade_label"] = (
-            trade_options.index.astype(str)
-            + " | "
-            + trade_options["date"].astype(str)
-            + " | "
-            + trade_options["symbol"].astype(str)
-            + " | "
-            + trade_options["side"].astype(str)
-            + " | P&L: "
-            + trade_options["net_pnl"].round(2).astype(str)
-        )
+        trade_selector_options = {}
 
-        selected_label = st.selectbox(
-            "Select trade",
-            trade_options["trade_label"].tolist(),
-            key="tab1_trade_selector",
-        )
+        for _, row in filtered.iterrows():
+            if pd.isna(row["trade_index"]):
+                continue
 
-        selected_index = int(selected_label.split(" | ")[0])
-        trade = trades.loc[selected_index]
+            trade_id = int(row["trade_index"])
 
-        st.divider()
-        st.subheader("Trade Details")
-
-        d1, d2, d3, d4 = st.columns(4)
-
-        d1.metric("Symbol", trade["symbol"])
-        d2.metric("Side", trade["side"])
-        d3.metric("Shares", int(trade["shares"]))
-        d4.metric("Net P&L", f"${trade['net_pnl']:,.2f}")
-
-        d5, d6, d7, d8 = st.columns(4)
-
-        d5.metric("Avg Entry", f"${trade['avg_entry']:,.4f}")
-        d6.metric("Avg Exit", f"${trade['avg_exit']:,.4f}")
-        d7.metric("Hold Minutes", f"{trade['hold_minutes']:,.1f}")
-        d8.metric("R Multiple", f"{trade['r_multiple']:,.2f}")
-
-        st.write("Entry Time:", trade["entry_time"])
-        st.write("Exit Time:", trade["exit_time"])
-        st.write("Executions:", trade["executions"])
-
-        st.divider()
-        st.subheader("Journal Entry")
-
-        existing = annotations[annotations["trade_index"] == selected_index]
-
-        if not existing.empty:
-            existing = existing.iloc[-1]
-        else:
-            existing = None
-
-        tag_options = [
-            "",
-            "Gap & Go",
-            "ORB",
-            "VWAP Reclaim",
-            "Pullback",
-            "Reversal",
-            "News",
-            "FOMO",
-            "A+ Setup",
-            "Bad Entry",
-            "Bad Exit",
-        ]
-
-        grade_options = ["", "A+", "A", "B", "C", "D", "F"]
-
-        emotion_options = [
-            "",
-            "Calm",
-            "Confident",
-            "Patient",
-            "FOMO",
-            "Fearful",
-            "Greedy",
-            "Revenge",
-            "Frustrated",
-        ]
-
-        mistake_options = [
-            "",
-            "None",
-            "Chased",
-            "Held too long",
-            "Exited too early",
-            "Averaged down",
-            "Ignored stop",
-            "Oversized",
-            "Overtraded",
-        ]
-
-        def option_index(options, value):
-            if pd.isna(value):
-                return 0
-            return options.index(value) if value in options else 0
-
-        tag = st.selectbox(
-            "Setup / Tag",
-            tag_options,
-            index=option_index(tag_options, existing["tag"] if existing is not None else ""),
-            key=f"tab1_tag_{selected_index}",
-        )
-
-        grade = st.selectbox(
-            "Trade Grade",
-            grade_options,
-            index=option_index(grade_options, existing["grade"] if existing is not None else ""),
-            key=f"tab1_grade_{selected_index}",
-        )
-
-        emotion = st.selectbox(
-            "Emotion",
-            emotion_options,
-            index=option_index(emotion_options, existing["emotion"] if existing is not None else ""),
-            key=f"tab1_emotion_{selected_index}",
-        )
-
-        mistake = st.selectbox(
-            "Mistake",
-            mistake_options,
-            index=option_index(mistake_options, existing["mistake"] if existing is not None else ""),
-            key=f"tab1_mistake_{selected_index}",
-        )
-
-        notes = st.text_area(
-            "Trade Notes",
-            value=existing["notes"] if existing is not None and not pd.isna(existing["notes"]) else "",
-            placeholder="What happened? What did you do well? What should you improve?",
-            key=f"tab1_notes_{selected_index}",
-        )
-
-        if st.button("Save Journal Entry", key=f"save_journal_{selected_index}"):
-            new_entry = {
-                "trade_index": selected_index,
-                "symbol": trade["symbol"],
-                "tag": tag,
-                "grade": grade,
-                "emotion": emotion,
-                "mistake": mistake,
-                "notes": notes,
-                "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            }
-
-            annotations = annotations[annotations["trade_index"] != selected_index]
-            annotations = pd.concat(
-                [annotations, pd.DataFrame([new_entry])],
-                ignore_index=True,
+            trade_date = (
+                row["date"].strftime("%Y-%m-%d")
+                if pd.notna(row["date"])
+                else "Unknown date"
             )
 
-            ANNOTATIONS_PATH.parent.mkdir(exist_ok=True)
-            annotations.to_csv(ANNOTATIONS_PATH, index=False)
+            net_pnl = pd.to_numeric(
+                row["net_pnl"],
+                errors="coerce",
+            )
 
-            st.success("Journal entry saved.")
+            pnl_text = (
+                f"${net_pnl:,.2f}"
+                if pd.notna(net_pnl)
+                else "N/A"
+            )
 
+            label = (
+                f"{trade_id} | "
+                f"{trade_date} | "
+                f"{row['symbol']} | "
+                f"{row['side']} | "
+                f"{pnl_text}"
+            )
+
+            trade_selector_options[label] = trade_id
+
+        if not trade_selector_options:
+            st.warning(
+                "No valid trade IDs are available "
+                "under the current filters."
+            )
+
+        else:
+            selected_label = st.selectbox(
+                "Select Trade",
+                list(trade_selector_options.keys()),
+                key="tab1_trade_selector",
+            )
+
+            selected_index = (
+                trade_selector_options[selected_label]
+            )
+
+            selected_rows = filtered[
+                filtered["trade_index"]
+                == selected_index
+            ]
+
+            if selected_rows.empty:
+                st.warning(
+                    "The selected trade is no longer "
+                    "available under the current filters."
+                )
+
+            else:
+                trade = selected_rows.iloc[0]
+
+                # ---------------------------------
+                # Trade details
+                # ---------------------------------
+                st.divider()
+                st.subheader("Trade Details")
+
+                d1, d2, d3, d4 = st.columns(4)
+
+                d1.metric(
+                    "Symbol",
+                    str(trade["symbol"]),
+                )
+
+                d2.metric(
+                    "Side",
+                    str(trade["side"]),
+                )
+
+                shares = pd.to_numeric(
+                    trade["shares"],
+                    errors="coerce",
+                )
+
+                d3.metric(
+                    "Shares",
+                    (
+                        f"{int(shares):,}"
+                        if pd.notna(shares)
+                        else "N/A"
+                    ),
+                )
+
+                trade_net_pnl = pd.to_numeric(
+                    trade["net_pnl"],
+                    errors="coerce",
+                )
+
+                d4.metric(
+                    "Net P&L",
+                    (
+                        f"${trade_net_pnl:,.2f}"
+                        if pd.notna(trade_net_pnl)
+                        else "N/A"
+                    ),
+                )
+
+                d5, d6, d7, d8 = st.columns(4)
+
+                avg_entry = pd.to_numeric(
+                    trade["avg_entry"],
+                    errors="coerce",
+                )
+
+                avg_exit = pd.to_numeric(
+                    trade["avg_exit"],
+                    errors="coerce",
+                )
+
+                hold_minutes = pd.to_numeric(
+                    trade["hold_minutes"],
+                    errors="coerce",
+                )
+
+                r_multiple = pd.to_numeric(
+                    trade["r_multiple"],
+                    errors="coerce",
+                )
+
+                d5.metric(
+                    "Avg Entry",
+                    (
+                        f"${avg_entry:,.4f}"
+                        if pd.notna(avg_entry)
+                        else "N/A"
+                    ),
+                )
+
+                d6.metric(
+                    "Avg Exit",
+                    (
+                        f"${avg_exit:,.4f}"
+                        if pd.notna(avg_exit)
+                        else "N/A"
+                    ),
+                )
+
+                d7.metric(
+                    "Hold Minutes",
+                    (
+                        f"{hold_minutes:,.1f}"
+                        if pd.notna(hold_minutes)
+                        else "N/A"
+                    ),
+                )
+
+                d8.metric(
+                    "R Multiple",
+                    (
+                        f"{r_multiple:,.2f}"
+                        if pd.notna(r_multiple)
+                        else "N/A"
+                    ),
+                )
+
+                st.write(
+                    "Entry Time:",
+                    trade["entry_time"],
+                )
+
+                st.write(
+                    "Exit Time:",
+                    trade["exit_time"],
+                )
+
+                st.write(
+                    "Executions:",
+                    trade["executions"],
+                )
+
+                # ---------------------------------
+                # Existing journal entry
+                # ---------------------------------
+                st.divider()
+                st.subheader("Journal Entry")
+
+                existing_rows = annotations[
+                    annotations["trade_index"]
+                    == selected_index
+                ]
+
+                existing = (
+                    existing_rows.iloc[-1]
+                    if not existing_rows.empty
+                    else None
+                )
+
+                tag_options = [
+                    "",
+                    "Gap & Go",
+                    "ORB",
+                    "VWAP Reclaim",
+                    "Pullback",
+                    "Reversal",
+                    "News",
+                    "FOMO",
+                    "A+ Setup",
+                    "Bad Entry",
+                    "Bad Exit",
+                ]
+
+                grade_options = [
+                    "",
+                    "A+",
+                    "A",
+                    "B",
+                    "C",
+                    "D",
+                    "F",
+                ]
+
+                emotion_options = [
+                    "",
+                    "Calm",
+                    "Confident",
+                    "Patient",
+                    "FOMO",
+                    "Fearful",
+                    "Greedy",
+                    "Revenge",
+                    "Frustrated",
+                ]
+
+                mistake_options = [
+                    "",
+                    "None",
+                    "Chased",
+                    "Held too long",
+                    "Exited too early",
+                    "Averaged down",
+                    "Ignored stop",
+                    "Oversized",
+                    "Overtraded",
+                ]
+
+                def option_index(options, value):
+                    if pd.isna(value):
+                        return 0
+
+                    value = str(value)
+
+                    return (
+                        options.index(value)
+                        if value in options
+                        else 0
+                    )
+
+                tag = st.selectbox(
+                    "Setup / Tag",
+                    tag_options,
+                    index=option_index(
+                        tag_options,
+                        (
+                            existing["tag"]
+                            if existing is not None
+                            else ""
+                        ),
+                    ),
+                    key=f"tab1_tag_{selected_index}",
+                )
+
+                grade = st.selectbox(
+                    "Trade Grade",
+                    grade_options,
+                    index=option_index(
+                        grade_options,
+                        (
+                            existing["grade"]
+                            if existing is not None
+                            else ""
+                        ),
+                    ),
+                    key=f"tab1_grade_{selected_index}",
+                )
+
+                emotion = st.selectbox(
+                    "Emotion",
+                    emotion_options,
+                    index=option_index(
+                        emotion_options,
+                        (
+                            existing["emotion"]
+                            if existing is not None
+                            else ""
+                        ),
+                    ),
+                    key=f"tab1_emotion_{selected_index}",
+                )
+
+                mistake = st.selectbox(
+                    "Mistake",
+                    mistake_options,
+                    index=option_index(
+                        mistake_options,
+                        (
+                            existing["mistake"]
+                            if existing is not None
+                            else ""
+                        ),
+                    ),
+                    key=f"tab1_mistake_{selected_index}",
+                )
+
+                existing_notes = ""
+
+                if (
+                    existing is not None
+                    and pd.notna(existing["notes"])
+                ):
+                    existing_notes = str(
+                        existing["notes"]
+                    )
+
+                notes = st.text_area(
+                    "Trade Notes",
+                    value=existing_notes,
+                    placeholder=(
+                        "What happened? What did you do well? "
+                        "What should you improve?"
+                    ),
+                    key=f"tab1_notes_{selected_index}",
+                )
+
+                save_col, msg_col = st.columns([1, 4])
+
+                with save_col:
+                    save_clicked = st.button(
+                        "💾 Save",
+                        key=f"save_journal_{selected_index}",
+                    )
+
+                with msg_col:
+
+                    if save_clicked:
+
+                        new_entry = {
+                            "trade_index": selected_index,
+                            "symbol": trade["symbol"],
+                            "tag": tag,
+                            "grade": grade,
+                            "emotion": emotion,
+                            "mistake": mistake,
+                            "notes": notes,
+                            "updated_at": datetime.now().strftime(
+                                "%Y-%m-%d %H:%M:%S"
+                            ),
+                        }
+
+                        annotations = annotations[
+                            annotations["trade_index"]
+                            != selected_index
+                        ]
+
+                        annotations = pd.concat(
+                            [
+                                annotations,
+                                pd.DataFrame([new_entry]),
+                            ],
+                            ignore_index=True,
+                        )
+
+                        annotations["trade_index"] = pd.to_numeric(
+                            annotations["trade_index"],
+                            errors="coerce",
+                        ).astype("Int64")
+
+                        ANNOTATIONS_PATH.parent.mkdir(
+                            parents=True,
+                            exist_ok=True,
+                        )
+
+                        annotations.to_csv(
+                            ANNOTATIONS_PATH,
+                            index=False,
+                        )
+                        
+                        journaled_trade_ids = (
+                            annotations["trade_index"]
+                            .dropna()
+                            .astype(int)
+                            .unique()
+                            .tolist()
+                        )
+
+                        st.caption("✓ Journal updated")
+
+                # if st.button(
+                    # "Save Journal Entry",
+                    # key=f"save_journal_{selected_index}",
+                # ):
+                    # new_entry = {
+                        # "trade_index": selected_index,
+                        # "symbol": trade["symbol"],
+                        # "tag": tag,
+                        # "grade": grade,
+                        # "emotion": emotion,
+                        # "mistake": mistake,
+                        # "notes": notes,
+                        # "updated_at": (
+                            # datetime.now().strftime(
+                                # "%Y-%m-%d %H:%M:%S"
+                            # )
+                        # ),
+                    # }
+
+                    # annotations = annotations[
+                        # annotations["trade_index"]
+                        # != selected_index
+                    # ]
+
+                    # annotations = pd.concat(
+                        # [
+                            # annotations,
+                            # pd.DataFrame([new_entry]),
+                        # ],
+                        # ignore_index=True,
+                    # )
+
+                    # annotations["trade_index"] = (
+                        # pd.to_numeric(
+                            # annotations["trade_index"],
+                            # errors="coerce",
+                        # )
+                        # .astype("Int64")
+                    # )
+
+                    # ANNOTATIONS_PATH.parent.mkdir(
+                        # parents=True,
+                        # exist_ok=True,
+                    # )
+
+                    # annotations.to_csv(
+                        # ANNOTATIONS_PATH,
+                        # index=False,
+                    # )
+
+                    # st.session_state["journal_saved"] = True
+                    # st.rerun()
+
+        # ---------------------------------
+        # Filtered trades table
+        # ---------------------------------
         st.divider()
         st.subheader("Filtered Trades")
 
-
-        
         table_data = filtered.copy()
 
-        journaled_ids = (
-            annotations["trade_index"]
-            .dropna()
-            .astype(int)
-            .tolist()
+        table_data["journaled"] = (
+            table_data["trade_index"]
+            .isin(journaled_trade_ids)
+            .map(
+                {
+                    True: "✅",
+                    False: "❌",
+                }
+            )
         )
 
-        table_data["journaled"] = table_data.index.isin(journaled_ids)
-
-        table_data["journaled"] = table_data["journaled"].map(
-            {
-                True: "✅",
-                False: "❌",
-            }
-        )
-        
         display_cols = [
             "journaled",
             "date",
@@ -403,34 +984,44 @@ with tab1:
             "hold_minutes",
         ]
 
-        display_cols = [c for c in display_cols if c in table_data.columns]
-        
+        display_cols = [
+            column
+            for column in display_cols
+            if column in table_data.columns
+        ]
+
         st.dataframe(
-            table_data.sort_values("exit_time", ascending=False)[display_cols],
+            table_data[
+                display_cols
+            ],
             use_container_width=True,
             hide_index=True,
         )
 
         st.download_button(
             "Download filtered trades CSV",
-            filtered.to_csv(index=False).encode("utf-8"),
+            filtered.to_csv(
+                index=False
+            ).encode("utf-8"),
             file_name="filtered_trades.csv",
             mime="text/csv",
         )
 
-        st.download_button(
-            "Download reconstructed trades CSV",
-            trades.to_csv(index=False).encode("utf-8"),
-            file_name="reconstructed_trades.csv",
-            mime="text/csv",
-        )
-
+    st.download_button(
+        "Download reconstructed trades CSV",
+        trades.to_csv(
+            index=False
+        ).encode("utf-8"),
+        file_name="reconstructed_trades.csv",
+        mime="text/csv",
+    )
+    
 with tab2:
 
     st.subheader("Symbol Analysis")
 
     symbol_stats = (
-        trades.groupby("symbol")
+        analysis_trades.groupby("symbol")
         .agg(
             trades=("symbol", "count"),
             net_pnl=("net_pnl", "sum"),
@@ -442,8 +1033,17 @@ with tab2:
         .reset_index()
     )
 
-    wins = trades[trades["net_pnl"] > 0].groupby("symbol").size()
-    losses = trades[trades["net_pnl"] < 0].groupby("symbol").size()
+    wins = (
+        analysis_trades[analysis_trades["net_pnl"] > 0]
+        .groupby("symbol")
+        .size()
+    )
+
+    losses = (
+        analysis_trades[analysis_trades["net_pnl"] < 0]
+        .groupby("symbol")
+        .size()
+    )
 
     symbol_stats["wins"] = symbol_stats["symbol"].map(wins).fillna(0).astype(int)
     symbol_stats["losses"] = symbol_stats["symbol"].map(losses).fillna(0).astype(int)
@@ -479,7 +1079,7 @@ with tab3:
     st.subheader("Performance by Side")
 
     side_stats = (
-        trades.groupby("side")
+        analysis_trades.groupby("side")
         .agg(
             trades=("symbol", "count"),
             net_pnl=("net_pnl", "sum"),
@@ -491,9 +1091,18 @@ with tab3:
         .reset_index()
     )
 
-    wins = trades[trades["net_pnl"] > 0].groupby("side").size()
-    losses = trades[trades["net_pnl"] < 0].groupby("side").size()
+    wins = (
+        analysis_trades[analysis_trades["net_pnl"] > 0]
+        .groupby("side")
+        .size()
+    )
 
+    losses = (
+        analysis_trades[analysis_trades["net_pnl"] < 0]
+        .groupby("side")
+        .size()
+    )
+    
     side_stats["wins"] = side_stats["side"].map(wins).fillna(0).astype(int)
     side_stats["losses"] = side_stats["side"].map(losses).fillna(0).astype(int)
     side_stats["win_rate"] = side_stats["wins"] / side_stats["trades"]
@@ -521,7 +1130,7 @@ with tab4:
     st.subheader("Time of Day Analysis")
 
     hourly = (
-        trades.groupby("entry_hour")
+        analysis_trades.groupby("entry_hour")
         .agg(
             trades=("symbol", "count"),
             net_pnl=("net_pnl", "sum"),
@@ -530,8 +1139,17 @@ with tab4:
         .reset_index()
     )
 
-    wins = trades[trades["net_pnl"] > 0].groupby("entry_hour").size()
-    losses = trades[trades["net_pnl"] < 0].groupby("entry_hour").size()
+    wins = (
+    analysis_trades[analysis_trades["net_pnl"] > 0]
+    .groupby("entry_hour")
+    .size()
+    )
+
+    losses = (
+        analysis_trades[analysis_trades["net_pnl"] < 0]
+        .groupby("entry_hour")
+        .size()
+    )
 
     hourly["wins"] = hourly["entry_hour"].map(wins).fillna(0).astype(int)
     hourly["losses"] = hourly["entry_hour"].map(losses).fillna(0).astype(int)
@@ -747,18 +1365,21 @@ with tab5:
         # st.success("Journal entry saved.")
 
 with tab6:
-
     st.subheader("Setup Performance")
-    setup_trades = journal_trades[
-    journal_trades["tag"].notna()
-    ]
 
-    setup_trades = setup_trades[
-        setup_trades["tag"] != ""
-    ]
-    
+    setup_trades = analysis_trades[
+        analysis_trades["tag"].notna()
+        & (
+            analysis_trades["tag"]
+            .astype(str)
+            .str.strip()
+            != ""
+        )
+    ].copy()
+
     if setup_trades.empty:
         st.info("No tagged trades yet.")
+
     else:
         setup_stats = (
             setup_trades.groupby("tag")
@@ -769,80 +1390,83 @@ with tab6:
                 largest_win=("net_pnl", "max"),
                 largest_loss=("net_pnl", "min"),
             )
-        .reset_index()
+            .reset_index()
         )
-    wins = (
-        setup_trades[setup_trades["net_pnl"] > 0]
-        .groupby("tag")
-        .size()
-    )
 
-    losses = (
-        setup_trades[setup_trades["net_pnl"] < 0]
-        .groupby("tag")
-        .size()
-    )
+        wins = (
+            setup_trades[setup_trades["net_pnl"] > 0]
+            .groupby("tag")
+            .size()
+        )
 
-    setup_stats["wins"] = (
-        setup_stats["tag"]
-        .map(wins)
-        .fillna(0)
-        .astype(int)
-    )
+        losses = (
+            setup_trades[setup_trades["net_pnl"] < 0]
+            .groupby("tag")
+            .size()
+        )
 
-    setup_stats["losses"] = (
-        setup_stats["tag"]
-        .map(losses)
-        .fillna(0)
-        .astype(int)
-    )
+        setup_stats["wins"] = (
+            setup_stats["tag"]
+            .map(wins)
+            .fillna(0)
+            .astype(int)
+        )
 
-    setup_stats["win_rate"] = (
-        100
-        * setup_stats["wins"]
-        / setup_stats["trades"]
-    )
+        setup_stats["losses"] = (
+            setup_stats["tag"]
+            .map(losses)
+            .fillna(0)
+            .astype(int)
+        )
 
-    setup_stats = setup_stats.sort_values(
-        "net_pnl",
-        ascending=False
-    )
+        setup_stats["win_rate"] = (
+            100
+            * setup_stats["wins"]
+            / setup_stats["trades"]
+        )
 
-    st.dataframe(
-        setup_stats,
-        use_container_width=True,
-        hide_index=True,
-    )
+        setup_stats = setup_stats.sort_values(
+            "net_pnl",
+            ascending=False,
+        )
 
-    st.subheader("Net P&L by Setup")
+        st.dataframe(
+            setup_stats,
+            use_container_width=True,
+            hide_index=True,
+        )
 
-    st.bar_chart(
-        setup_stats.set_index("tag")["net_pnl"]
-    )
+        st.subheader("Net P&L by Setup")
+        st.bar_chart(
+            setup_stats.set_index("tag")["net_pnl"]
+        )
 
-    st.subheader("Win Rate by Setup")
+        st.subheader("Win Rate by Setup")
+        st.bar_chart(
+            setup_stats.set_index("tag")["win_rate"]
+        )
 
-    st.bar_chart(
-        setup_stats.set_index("tag")["win_rate"]
-    )
-
-    st.download_button(
-        "Download Setup Report",
-        setup_stats.to_csv(index=False).encode("utf-8"),
-        file_name="setup_report.csv",
-        mime="text/csv",
-    )
+        st.download_button(
+            "Download Setup Report",
+            setup_stats.to_csv(index=False).encode("utf-8"),
+            file_name="setup_report.csv",
+            mime="text/csv",
+        )
       
 with tab7:
 
     st.subheader("Emotion Analysis")
-    emotion_trades = journal_trades[
-    journal_trades["emotion"].notna()
-    ]
-
-    emotion_trades = emotion_trades[
-        emotion_trades["emotion"] != ""
-    ]
+    
+    emotion_trades = analysis_trades[
+        analysis_trades["tag"].notna()
+        & (
+            analysis_trades["tag"]
+            .astype(str)
+            .str.strip()
+            != ""
+        )
+    ].copy()
+    
     if emotion_trades.empty:
         st.info("No emotion data available yet.")
     else:
@@ -857,74 +1481,74 @@ with tab7:
             )
             .reset_index()
         )
-    wins = (
-        emotion_trades[emotion_trades["net_pnl"] > 0]
-        .groupby("emotion")
-        .size()
-    )
+        wins = (
+            emotion_trades[emotion_trades["net_pnl"] > 0]
+            .groupby("emotion")
+            .size()
+        )
 
-    losses = (
-        emotion_trades[emotion_trades["net_pnl"] < 0]
-        .groupby("emotion")
-        .size()
-    )
+        losses = (
+            emotion_trades[emotion_trades["net_pnl"] < 0]
+            .groupby("emotion")
+            .size()
+        )
 
-    emotion_stats["wins"] = (
-        emotion_stats["emotion"]
-        .map(wins)
-        .fillna(0)
-        .astype(int)
-    )
+        emotion_stats["wins"] = (
+            emotion_stats["emotion"]
+            .map(wins)
+            .fillna(0)
+            .astype(int)
+        )
 
-    emotion_stats["losses"] = (
-        emotion_stats["emotion"]
-        .map(losses)
-        .fillna(0)
-        .astype(int)
-    )
+        emotion_stats["losses"] = (
+            emotion_stats["emotion"]
+            .map(losses)
+            .fillna(0)
+            .astype(int)
+        )
 
-    emotion_stats["win_rate"] = (
-        100
-        * emotion_stats["wins"]
-        / emotion_stats["trades"]
-    )
+        emotion_stats["win_rate"] = (
+            100
+            * emotion_stats["wins"]
+            / emotion_stats["trades"]
+        )
     
-    emotion_stats = emotion_stats.sort_values(
-        "net_pnl",
-        ascending=False
-    )
+        emotion_stats = emotion_stats.sort_values(
+            "net_pnl",
+            ascending=False
+        )
     
-    st.dataframe(
-        emotion_stats,
-        use_container_width=True,
-        hide_index=True,
-    )
+        st.dataframe(
+            emotion_stats,
+            use_container_width=True,
+            hide_index=True,
+        )
 
-    st.subheader("Net P&L by Emotion")
+        st.subheader("Net P&L by Emotion")
 
-    st.bar_chart(
-        emotion_stats.set_index("emotion")["net_pnl"]
-    )
+        st.bar_chart(
+            emotion_stats.set_index("emotion")["net_pnl"]
+        )
     
-    st.subheader("Win Rate by Emotion")
+        st.subheader("Win Rate by Emotion")
 
-    st.bar_chart(
-        emotion_stats.set_index("emotion")["win_rate"]
-    )
+        st.bar_chart(
+            emotion_stats.set_index("emotion")["win_rate"]
+        )
 
-    st.download_button(
-        "Download Emotion Report",
-        emotion_stats.to_csv(index=False).encode("utf-8"),
-        file_name="emotion_report.csv",
-        mime="text/csv",
-    )
+        st.download_button(
+            "Download Emotion Report",
+            emotion_stats.to_csv(index=False).encode("utf-8"),
+            file_name="emotion_report.csv",
+            mime="text/csv",
+        )
 
 with tab8:
 
     st.subheader("Mistake Analysis")
 
-    mistake_trades = journal_trades[
-        journal_trades["mistake"].notna()
+    mistake_trades = analysis_trades[
+        analysis_trades["mistake"].notna()
     ]
 
     mistake_trades = mistake_trades[
@@ -1013,8 +1637,8 @@ with tab9:
 
     st.subheader("Grade Analysis")
 
-    grade_trades = journal_trades[
-        journal_trades["grade"].notna()
+    grade_trades = analysis_trades[
+        analysis_trades["grade"].notna()
     ].copy()
 
     grade_trades = grade_trades[
@@ -1151,158 +1775,192 @@ with tab9:
         )
 
 with tab10:
-
     st.subheader("Daily Review")
+    
     available_dates = sorted(
-    trades["date"].dropna().unique(),
-    reverse=True
+        analysis_trades["date"].dropna().unique(),
+        reverse=True
     )
 
-    selected_day = st.selectbox(
-        "Select Trading Day",
-        available_dates
-    )
+    if not available_dates:
+        st.info("No trading days match the selected filters.")
 
-    day_trades = journal_trades[
-    journal_trades["date"] == selected_day
-    ]
-    
-    col1, col2, col3, col4 = st.columns(4)
-
-    col1.metric(
-        "Trades",
-        len(day_trades)
-    )
-
-    col2.metric(
-        "Net P&L",
-        f"${day_trades['net_pnl'].sum():,.2f}"
-    )
-
-    col3.metric(
-        "Avg Trade",
-        f"${day_trades['net_pnl'].mean():,.2f}"
-    )
-
-    wins = (day_trades["net_pnl"] > 0).sum()
-
-    win_rate = (
-        100 * wins / len(day_trades)
-        if len(day_trades) > 0
-        else 0
-    )
-
-    col4.metric(
-        "Win Rate",
-        f"{win_rate:.1f}%"
-    )
-    
-    st.subheader("Best & Worst Trade")
-
-    valid_day_trades = day_trades.dropna(
-    subset=["net_pnl"]
-    ).copy()
-
-    valid_day_trades["net_pnl"] = pd.to_numeric(
-        valid_day_trades["net_pnl"],
-        errors="coerce",
-    )
-
-    valid_day_trades = valid_day_trades.dropna(
-        subset=["net_pnl"]
-    )
-
-    if valid_day_trades.empty:
-        st.info("No trades available for this day.")
-        
     else:
-        best_trade = valid_day_trades.iloc[
-        valid_day_trades["net_pnl"].argmax()
-        ]
-
-        worst_trade = valid_day_trades.iloc[
-            valid_day_trades["net_pnl"].argmin()
-        ]
-
-        col1, col2 = st.columns(2)
-
-        with col1:
-            st.success(
-                f"""
-        Best Trade
-
-        {best_trade['symbol']}
-
-        P&L: ${best_trade['net_pnl']:.2f}
-        """
-            )
-
-    with col2:
-        st.error(
-            f"""
-        Worst Trade
-
-        {worst_trade['symbol']}
-
-        P&L: ${worst_trade['net_pnl']:.2f}
-        """
+        selected_day = st.selectbox(
+            "Select Trading Day",
+            available_dates,
         )
 
-    st.subheader("Behavior Summary")
+        day_trades = analysis_trades[
+            analysis_trades["date"] == selected_day
+        ].copy()
     
-    if day_trades["tag"].notna().any():
+        col1, col2, col3, col4 = st.columns(4)
 
-        top_setup = (
-            day_trades["tag"]
-            .value_counts()
-            .idxmax()
+        col1.metric(
+            "Trades",
+            len(day_trades)
         )
 
-        st.write(
-            f"**Most Traded Setup:** {top_setup}"
-        )
-    
-    if day_trades["emotion"].notna().any():
-
-        top_emotion = (
-            day_trades["emotion"]
-            .value_counts()
-            .idxmax()
+        col2.metric(
+            "Net P&L",
+            f"${day_trades['net_pnl'].sum():,.2f}"
         )
 
-        st.write(
-            f"**Most Common Emotion:** {top_emotion}"
-        )
-    
-    if day_trades["mistake"].notna().any():
-
-        top_mistake = (
-            day_trades["mistake"]
-            .value_counts()
-            .idxmax()
+        col3.metric(
+            "Avg Trade",
+            f"${day_trades['net_pnl'].mean():,.2f}"
         )
 
-        st.write(
-            f"**Most Common Mistake:** {top_mistake}"
-        )
-    
-    st.subheader("Trades")
+        wins = (day_trades["net_pnl"] > 0).sum()
 
-    st.dataframe(
-        day_trades[
-            [
-                "symbol",
-                "side",
-                "shares",
-                "net_pnl",
-                "tag",
-                "emotion",
-                "mistake",
-                "grade",
+        win_rate = (
+            100 * wins / len(day_trades)
+            if len(day_trades) > 0
+            else 0
+        )
+
+        col4.metric(
+            "Win Rate",
+            f"{win_rate:.1f}%"
+        )
+        
+        st.subheader("Best & Worst Trade")
+
+        valid_day_trades = day_trades.dropna(
+        subset=["net_pnl"]
+        ).copy()
+
+        valid_day_trades["net_pnl"] = pd.to_numeric(
+            valid_day_trades["net_pnl"],
+            errors="coerce",
+        )
+
+        valid_day_trades = valid_day_trades.dropna(
+            subset=["net_pnl"]
+        )
+
+        if valid_day_trades.empty:
+            st.info("No trades available for this day.")
+            
+        else:
+            best_trade = valid_day_trades.iloc[
+            valid_day_trades["net_pnl"].argmax()
             ]
-        ],
-        use_container_width=True,
-    )
+
+            worst_trade = valid_day_trades.iloc[
+                valid_day_trades["net_pnl"].argmin()
+            ]
+
+            col1, col2 = st.columns(2)
+
+            with col1:
+                st.success(
+                    f"""
+            Best Trade
+
+            {best_trade['symbol']}
+
+            P&L: ${best_trade['net_pnl']:.2f}
+            """
+                )
+
+            with col2:
+                st.error(
+                    f"""
+                Worst Trade
+
+                {worst_trade['symbol']}
+
+                P&L: ${worst_trade['net_pnl']:.2f}
+                """
+                )
+
+        st.subheader("Behavior Summary")
+        
+        valid_setups = day_trades[
+            day_trades["tag"].notna()
+            & (
+                day_trades["tag"]
+                .astype(str)
+                .str.strip()
+                != ""
+            )
+        ]
+
+        if not valid_setups.empty:
+            top_setup = valid_setups["tag"].value_counts().idxmax()
+            st.write(f"**Most Traded Setup:** {top_setup}")
+        else:
+            st.write("**Most Traded Setup:** Not journaled")
+
+        valid_emotions = day_trades[
+            day_trades["emotion"].notna()
+            & (
+                day_trades["emotion"]
+                .astype(str)
+                .str.strip()
+                != ""
+            )
+        ]
+        
+        if not valid_emotions.empty:
+            top_emotion = valid_emotions["emotion"].value_counts().idxmax()
+            st.write(f"**Most Common Emotion:** {top_emotion}")
+        else:
+            st.write("**Most Emotions:** Not journaled")       
+        
+        valid_mistakes = day_trades[
+            day_trades["mistake"].notna()
+            & (
+                day_trades["mistake"]
+                .astype(str)
+                .str.strip()
+                != ""
+            )
+            & (
+                day_trades["mistake"]
+                .astype(str)
+                .str.lower()
+                != "none"
+            )
+        ]
+        
+        if not valid_mistakes.empty:
+            top_mistake = valid_mistakes["mistake"].value_counts().idxmax()
+            st.write(f"**Most Common Mistake:** {top_mistake}")
+        else:
+            st.write("**Most Mistakes:** Not journaled")
+        
+        # if day_trades["mistake"].notna().any():
+
+            # top_mistake = (
+                # day_trades["mistake"]
+                # .value_counts()
+                # .idxmax()
+            # )
+
+            # st.write(
+                # f"**Most Common Mistake:** {top_mistake}"
+            # )
+        
+        st.subheader("Trades")
+
+        st.dataframe(
+            day_trades[
+                [
+                    "symbol",
+                    "side",
+                    "shares",
+                    "net_pnl",
+                    "tag",
+                    "emotion",
+                    "mistake",
+                    "grade",
+                ]
+            ],
+            use_container_width=True,
+        )
 
 with tab11:
 
@@ -1327,7 +1985,7 @@ with tab11:
         )
 
 
-    insight_trades = journal_trades.copy()
+    insight_trades = analysis_trades.copy()
 
     insight_trades["net_pnl"] = pd.to_numeric(
         insight_trades["net_pnl"],
@@ -1557,7 +2215,7 @@ with tab12:
 
     st.subheader("Expectancy & Risk Metrics")
 
-    risk_trades = trades.copy()
+    risk_trades = analysis_trades.copy()
 
     risk_trades["net_pnl"] = pd.to_numeric(
         risk_trades["net_pnl"],
@@ -1662,196 +2320,198 @@ with tab12:
 
         max_drawdown = abs(max_drawdown)
         
-    row1_col1, row1_col2, row1_col3, row1_col4 = st.columns(4)
+        row1_col1, row1_col2, row1_col3, row1_col4 = st.columns(4)
 
-    row1_col1.metric(
-        "Total Trades",
-        total_trades,
-    )
-
-    row1_col2.metric(
-        "Net P&L",
-        f"${total_net_pnl:,.2f}",
-    )
-
-    row1_col3.metric(
-        "Win Rate",
-        f"{win_rate:.1f}%",
-    )
-
-    row1_col4.metric(
-        "Average Trade",
-        f"${avg_trade:,.2f}",
-    )
-
-    row2_col1, row2_col2, row2_col3, row2_col4 = st.columns(4)
-
-    row2_col1.metric(
-        "Average Win",
-        f"${avg_win:,.2f}",
-    )
-
-    row2_col2.metric(
-        "Average Loss",
-        f"${avg_loss:,.2f}",
-    )
-
-    row2_col3.metric(
-        "Payoff Ratio",
-        (
-            f"{payoff_ratio:.2f}"
-            if payoff_ratio != float("inf")
-            else "∞"
-        ),
-    )
-
-    row2_col4.metric(
-        "Profit Factor",
-        (
-            f"{profit_factor:.2f}"
-            if profit_factor != float("inf")
-            else "∞"
-        ),
-    )
-
-    row3_col1, row3_col2, row3_col3, row3_col4 = st.columns(4)
-
-    row3_col1.metric(
-        "Expectancy / Trade",
-        f"${expectancy:,.2f}",
-    )
-
-    row3_col2.metric(
-        "Max Drawdown",
-        f"${max_drawdown:,.2f}",
-    )
-
-    row3_col3.metric(
-        "Winning Trades",
-        wins,
-    )
-
-    row3_col4.metric(
-        "Losing Trades",
-        losses,
-    )
-    
-    st.subheader("Interpretation")
-
-    if expectancy > 0:
-        st.success(
-            f"Positive expectancy: on average, each trade earns "
-            f"${expectancy:,.2f}."
-        )
-    elif expectancy < 0:
-        st.error(
-            f"Negative expectancy: on average, each trade loses "
-            f"${abs(expectancy):,.2f}."
-        )
-    else:
-        st.info("Expectancy is currently at breakeven.")
-
-    if profit_factor > 1.5:
-        st.success(
-            "Profit factor is strong. Gross profits meaningfully "
-            "exceed gross losses."
-        )
-    elif profit_factor >= 1:
-        st.warning(
-            "Profit factor is positive but still modest."
-        )
-    else:
-        st.error(
-            "Profit factor is below 1. Gross losses exceed gross profits."
+        row1_col1.metric(
+            "Total Trades",
+            total_trades,
         )
 
-    if payoff_ratio >= 1:
-        st.write(
-            "Your average winner is at least as large as your average loser."
+        row1_col2.metric(
+            "Net P&L",
+            f"${total_net_pnl:,.2f}",
         )
-    else:
-        st.write(
-            "Your average winner is smaller than your average loser, "
-            "so a higher win rate may be required."
+
+        row1_col3.metric(
+            "Win Rate",
+            f"{win_rate:.1f}%",
         )
-   
-    st.subheader("Cumulative Net P&L")
 
-    st.line_chart(
-        equity_trades.set_index("exit_time")[
-            "cumulative_pnl"
-        ]
-    )
+        row1_col4.metric(
+            "Average Trade",
+            f"${avg_trade:,.2f}",
+        )
 
-    st.subheader("Drawdown")
+        row2_col1, row2_col2, row2_col3, row2_col4 = st.columns(4)
 
-    st.line_chart(
-        equity_trades.set_index("exit_time")[
-            "drawdown"
-        ]
-    )
-    
-    metric_summary = pd.DataFrame(
-        {
-            "Metric": [
-                "Total Trades",
-                "Winning Trades",
-                "Losing Trades",
-                "Breakeven Trades",
-                "Win Rate",
-                "Loss Rate",
-                "Average Win",
-                "Average Loss",
-                "Payoff Ratio",
-                "Gross Profit",
-                "Gross Loss",
-                "Profit Factor",
-                "Expectancy per Trade",
-                "Net P&L",
-                "Maximum Drawdown",
-            ],
-            "Value": [
-                total_trades,
-                wins,
-                losses,
-                breakeven,
-                f"{win_rate:.1f}%",
-                f"{loss_rate:.1f}%",
-                f"${avg_win:,.2f}",
-                f"${avg_loss:,.2f}",
-                (
-                    f"{payoff_ratio:.2f}"
-                    if payoff_ratio != float("inf")
-                    else "∞"
-                ),
-                f"${gross_profit:,.2f}",
-                f"${gross_loss:,.2f}",
-                (
-                    f"{profit_factor:.2f}"
-                    if profit_factor != float("inf")
-                    else "∞"
-                ),
-                f"${expectancy:,.2f}",
-                f"${total_net_pnl:,.2f}",
-                f"${max_drawdown:,.2f}",
-            ],
-        }
-    )
+        row2_col1.metric(
+            "Average Win",
+            f"${avg_win:,.2f}",
+        )
 
-    st.dataframe(
-        metric_summary,
-        use_container_width=True,
-        hide_index=True,
-    )
+        row2_col2.metric(
+            "Average Loss",
+            f"${avg_loss:,.2f}",
+        )
 
-    st.download_button(
-        "Download Risk Metrics",
-        metric_summary.to_csv(index=False).encode("utf-8"),
-        file_name="expectancy_risk_metrics.csv",
-        mime="text/csv",
-    )
+        row2_col3.metric(
+            "Payoff Ratio",
+            (
+                f"{payoff_ratio:.2f}"
+                if payoff_ratio != float("inf")
+                else "∞"
+            ),
+        )
+
+        row2_col4.metric(
+            "Profit Factor",
+            (
+                f"{profit_factor:.2f}"
+                if profit_factor != float("inf")
+                else "∞"
+            ),
+        )
+
+        row3_col1, row3_col2, row3_col3, row3_col4 = st.columns(4)
+
+        row3_col1.metric(
+            "Expectancy / Trade",
+            f"${expectancy:,.2f}",
+        )
+
+        row3_col2.metric(
+            "Max Drawdown",
+            f"${max_drawdown:,.2f}",
+        )
+
+        row3_col3.metric(
+            "Winning Trades",
+            wins,
+        )
+
+        row3_col4.metric(
+            "Losing Trades",
+            losses,
+        )
+        
+        st.subheader("Interpretation")
+
+        if expectancy > 0:
+            st.success(
+                f"Positive expectancy: on average, each trade earns "
+                f"${expectancy:,.2f}."
+            )
+        elif expectancy < 0:
+            st.error(
+                f"Negative expectancy: on average, each trade loses "
+                f"${abs(expectancy):,.2f}."
+            )
+        else:
+            st.info("Expectancy is currently at breakeven.")
+
+        if profit_factor > 1.5:
+            st.success(
+                "Profit factor is strong. Gross profits meaningfully "
+                "exceed gross losses."
+            )
+        elif profit_factor >= 1:
+            st.warning(
+                "Profit factor is positive but still modest."
+            )
+        else:
+            st.error(
+                "Profit factor is below 1. Gross losses exceed gross profits."
+            )
+
+        if payoff_ratio >= 1:
+            st.write(
+                "Your average winner is at least as large as your average loser."
+            )
+        else:
+            st.write(
+                "Your average winner is smaller than your average loser, "
+                "so a higher win rate may be required."
+            )
+       
+        st.subheader("Cumulative Net P&L")
+
+        st.line_chart(
+            equity_trades.set_index("exit_time")[
+                "cumulative_pnl"
+            ]
+        )
+
+        st.subheader("Drawdown")
+
+        st.line_chart(
+            equity_trades.set_index("exit_time")[
+                "drawdown"
+            ]
+        )
+        
+        metric_summary = pd.DataFrame(
+            {
+                "Metric": [
+                    "Total Trades",
+                    "Winning Trades",
+                    "Losing Trades",
+                    "Breakeven Trades",
+                    "Win Rate",
+                    "Loss Rate",
+                    "Average Win",
+                    "Average Loss",
+                    "Payoff Ratio",
+                    "Gross Profit",
+                    "Gross Loss",
+                    "Profit Factor",
+                    "Expectancy per Trade",
+                    "Net P&L",
+                    "Maximum Drawdown",
+                ],
+                "Value": [
+                    total_trades,
+                    wins,
+                    losses,
+                    breakeven,
+                    f"{win_rate:.1f}%",
+                    f"{loss_rate:.1f}%",
+                    f"${avg_win:,.2f}",
+                    f"${avg_loss:,.2f}",
+                    (
+                        f"{payoff_ratio:.2f}"
+                        if payoff_ratio != float("inf")
+                        else "∞"
+                    ),
+                    f"${gross_profit:,.2f}",
+                    f"${gross_loss:,.2f}",
+                    (
+                        f"{profit_factor:.2f}"
+                        if profit_factor != float("inf")
+                        else "∞"
+                    ),
+                    f"${expectancy:,.2f}",
+                    f"${total_net_pnl:,.2f}",
+                    f"${max_drawdown:,.2f}",
+                ],
+            }
+        )
+
+        st.dataframe(
+            metric_summary,
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        st.download_button(
+            "Download Risk Metrics",
+            metric_summary.to_csv(index=False).encode("utf-8"),
+            file_name="expectancy_risk_metrics.csv",
+            mime="text/csv",
+        )
   
 with st.expander("Raw cleaned executions"):
     st.dataframe(executions, use_container_width=True, hide_index=True)
     
 #st.write(day_trades.columns.tolist())
+
+#st.write(type(trade_options))

@@ -23,3 +23,11 @@ trade_index,symbol,tag,grade,emotion,mistake,notes,updated_at
 89,BYAH,Gap & Go,C,FOMO,Chased,,2026-07-11 22:17:43
 77,BYAH,News,C,FOMO,Chased,,2026-07-11 22:18:04
 75,BYAH,Pullback,C,Fearful,Exited too early,,2026-07-11 22:18:31
+14,CPOP,Pullback,A+,Confident,Held too long,,2026-07-14 03:36:50
+54,GELS,VWAP Reclaim,A+,Confident,,yes,2026-07-14 03:38:09
+52,GELS,Gap & Go,B,Patient,,,2026-07-14 03:38:26
+23,HWH,Bad Exit,B,Fearful,Exited too early,test,2026-07-14 11:06:26
+44,PPCB,Pullback,B,Frustrated,Chased,,2026-07-14 11:07:21
+176,RGNT,VWAP Reclaim,A,Confident,,test trade notes,2026-07-14 14:21:04
+174,RGNT,VWAP Reclaim,B,Fearful,Held too long,rest xyz trade notes,2026-07-14 14:34:14
+173,RGNT,Gap & Go,B,Frustrated,None,,2026-07-14 14:44:27
